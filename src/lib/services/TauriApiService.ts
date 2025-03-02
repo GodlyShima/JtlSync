@@ -1,146 +1,85 @@
-import type { AppConfig, SyncStats, SystemInfo } from "$lib/types";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { AppConfig, SyncStats } from "../types";
 
-/**
- * Service for interacting with the Tauri backend
- */
 export class TauriApiService {
-  // Event listeners
-  private static listeners: Map<string, Function[]> = new Map();
-
   /**
-   * Initialize the service and set up event listeners
+   * Invoke a Tauri command
    */
-  static async initialize(): Promise<void> {
-    // Listen for events from the backend
-    await listen("jtl-api-status", (event) => {
-      this.notifyListeners("jtl-api-status", event.payload);
-    });
-
-    await listen("sync-progress", (event) => {
-      this.notifyListeners("sync-progress", event.payload);
-    });
-
-    await listen("log", (event) => {
-      this.notifyListeners("log", event.payload);
-    });
+  static async invoke<T>(
+    command: string,
+    args?: Record<string, unknown>
+  ): Promise<T> {
+    return invoke<T>(command, args);
   }
 
   /**
-   * Add an event listener
-   * @param event The event to listen for
-   * @param callback The callback function
+   * Listen for Tauri events
    */
-  static addEventListener(event: string, callback: Function): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
-    this.listeners.get(event)?.push(callback);
+  static async listen(
+    event: string,
+    callback: (event: any) => void
+  ): Promise<UnlistenFn> {
+    return listen(event, callback);
   }
 
   /**
-   * Remove an event listener
-   * @param event The event to stop listening for
-   * @param callback The callback function to remove
+   * Stop listening for a Tauri event
    */
-  static removeEventListener(event: string, callback: Function): void {
-    if (this.listeners.has(event)) {
-      const callbacks = this.listeners.get(event) || [];
-      const index = callbacks.indexOf(callback);
-      if (index !== -1) {
-        callbacks.splice(index, 1);
-      }
-    }
-  }
-
-  /**
-   * Notify all listeners of an event
-   * @param event The event that occurred
-   * @param data The event data
-   */
-  private static notifyListeners(event: string, data: any): void {
-    if (this.listeners.has(event)) {
-      for (const callback of this.listeners.get(event) || []) {
-        callback(data);
-      }
-    }
-  }
-
-  /**
-   * Start the JTL API service
-   * @param config The application configuration
-   */
-  static async startJtlApi(config: AppConfig): Promise<string> {
-    return invoke("start_jtl_api", { config });
-  }
-
-  /**
-   * Stop the JTL API service
-   */
-  static async stopJtlApi(): Promise<string> {
-    return invoke("stop_jtl_api");
-  }
-
-  /**
-   * Check if the JTL API service is running
-   */
-  static async isJtlApiRunning(): Promise<boolean> {
-    return invoke("is_jtl_api_running");
+  static async unlisten(
+    event: string,
+    callback: (event: any) => void
+  ): Promise<void> {
+    const unlistenFn = await listen(event, callback);
+    unlistenFn();
   }
 
   /**
    * Get system information
    */
-  static async getSystemInfo(): Promise<SystemInfo> {
+  static async getSystemInfo(): Promise<any> {
     return invoke("get_system_info");
   }
 
   /**
-   * Save the application configuration
-   * @param config The configuration to save
-   */
-  static async saveConfig(config: AppConfig): Promise<void> {
-    return invoke("save_config", { config });
-  }
-
-  /**
-   * Load the application configuration
-   */
-  static async loadConfig(): Promise<AppConfig> {
-    return invoke("load_config");
-  }
-
-  /**
-   * Start a manual synchronization
-   */
-  static async startSync(): Promise<SyncStats> {
-    // This will be implemented in the Rust backend
-    return invoke("start_sync");
-  }
-
-  /**
-   * Schedule a synchronization job
-   * @param cronExpression The cron expression for scheduling
-   */
-  static async scheduleSync(cronExpression: string): Promise<void> {
-    return invoke("schedule_sync", { cronExpression });
-  }
-
-  /**
-   * Cancel all scheduled synchronization jobs
-   */
-  static async cancelScheduledSync(): Promise<void> {
-    return invoke("cancel_scheduled_sync");
-  }
-
-  /**
-   * Get the current synchronization statistics
+   * Get current sync statistics
    */
   static async getSyncStats(): Promise<SyncStats> {
-    return invoke("get_sync_stats");
+    return invoke<SyncStats>("get_sync_stats");
+  }
+
+  /**
+   * Start the synchronization process
+   */
+  static async startSync(config: AppConfig): Promise<SyncStats> {
+    return invoke<SyncStats>("start_sync_command", { config });
+  }
+
+  /**
+   * Schedule a sync operation
+   */
+  static async scheduleSync(cronExpression: string): Promise<void> {
+    return invoke<void>("schedule_sync", { cronExpression });
+  }
+
+  /**
+   * Cancel scheduled sync jobs
+   */
+  static async cancelScheduledSync(): Promise<void> {
+    return invoke<void>("cancel_scheduled_sync");
+  }
+
+  /**
+   * Load configuration
+   */
+  static async loadConfig(): Promise<AppConfig> {
+    return invoke<AppConfig>("load_config_command");
+  }
+
+  /**
+   * Save configuration
+   */
+  static async saveConfig(config: AppConfig): Promise<void> {
+    return invoke<void>("save_config_command", { config });
   }
 }
-
-// Initialize the service when the module is imported
-TauriApiService.initialize().catch(console.error);

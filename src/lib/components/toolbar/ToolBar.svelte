@@ -1,8 +1,17 @@
 <script lang="ts">
   import AppInfo from "../AppInfo.svelte";
+  import PaginationControls from "./PaginationControls.svelte";
+  import RefreshControls from "./RefreshControls.svelte";
   import SearchBox from "./SearchBox.svelte";
 
 	export let searchTerm: string;
+  export let itemsPerPage: number;
+  export let currentPage: number;
+  export let totalPages: number;
+  export let totalResults: number;
+
+  export let refreshRate: number;
+  export let isFrozen: boolean;
 </script>
 
 <div class="toolbar">
@@ -10,7 +19,17 @@
     <SearchBox bind:searchTerm />
     <div class="toolbar-spacer"></div>
 
+    <PaginationControls 
+      bind:itemsPerPage
+      bind:currentPage
+      {totalPages}
+      {totalResults}
+    />
+
     <div class="toolbar-spacer"></div>
+
+    <RefreshControls bind:refreshRate bind:isFrozen />
+
 
     <AppInfo />
   </div>

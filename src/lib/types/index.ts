@@ -6,13 +6,20 @@ export interface DatabaseConfig {
   database: string;
 }
 
+export interface Column {
+  id: keyof VirtueMartOrder;
+  label: string;
+  visible: boolean;
+  required?: boolean;
+  format?: (value: any) => string;
+}
+
 // Tables configuration interface
 export interface TablesConfig {
   orders: string;
   orderItems: string;
   customers: string;
 }
-
 // Application configuration
 export interface AppConfig {
   joomla: DatabaseConfig;
@@ -20,6 +27,14 @@ export interface AppConfig {
   tables: TablesConfig;
   logFile: string;
   jtlApiPath: string;
+}
+
+export interface ToolConfig {
+  behavior: {
+    itemsPerPage: number;
+    refreshRate: number;
+    defaultStatusFilter: string;
+  };
 }
 
 // Synchronization statistics

@@ -1,0 +1,21 @@
+{
+  "joomla": {
+    "host": "w01539f0.kasserver.com",
+    "user": "d0243b57",
+    "password": "mallorca",
+    "database": "d0243b57"
+  },
+  "jtl": {
+    "host": "localhost",
+    "user": "root",
+    "password": "",
+    "database": "jtl"
+  },
+  "tables": {
+    "orders": "y13ci_virtuemart_orders",
+    "orderItems": "y13ci_virtuemart_order_items",
+    "customers": "y13ci_virtuemart_order_userinfos"
+  },
+  "logFile": "/path/to/sync_log.txt",
+  "jtlApiPath": "C:\\Program Files (x86)\\JTL-Software\\JTL.Wawi.Rest.exe"
+}

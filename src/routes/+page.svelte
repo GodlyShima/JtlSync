@@ -1,8 +1,11 @@
 <script lang="ts">
+  import OrdersTable from "$lib/components/orders/OrdersTable.svelte";
   import { StatsBar } from "$lib/components/stats";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ToolBar from "$lib/components/toolbar/ToolBar.svelte";
+  import { column_definitions } from "$lib/definitions";
   import { processStore } from "$lib/stores/processes";
+  import type { VirtueMartOrder } from "$lib/types";
 
    $: ({
     error,
@@ -11,6 +14,14 @@
     currentPage,
   } = $processStore);
 
+    $: columns = column_definitions.map((col) => ({
+    ...col,
+    visible:
+      col.required ||
+      (col.visible),
+  }));
+
+  let orders: VirtueMartOrder[] = [];
 </script>
 
 <div class="app-container">
@@ -19,7 +30,13 @@
     <StatsBar />
 
     <ToolBar bind:searchTerm={$processStore.searchTerm} />
-    <p>test</p>
+
+      {#if error}
+        <div class="alert">{error}</div>
+      {/if}
+
+      <OrdersTable {columns} bind:orders
+      />
   </main>
 </div>
 
