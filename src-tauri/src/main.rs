@@ -16,13 +16,7 @@ use env_logger::Env;
 
 use models::LogEntry;
 use commands::{
-    get_system_info,
-    save_config_command,
-    load_config_command,
-    start_sync_command,
-    get_sync_stats,
-    schedule_sync,
-    cancel_scheduled_sync,
+    cancel_scheduled_sync, get_sync_stats, get_synced_orders, get_system_info, load_config_command, save_config_command, schedule_sync, start_sync_command
 };
 use tauri::Emitter;
 
@@ -35,6 +29,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_system_info,
+            get_synced_orders,
             save_config_command,
             load_config_command,
             start_sync_command,

@@ -4,24 +4,53 @@
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ToolBar from "$lib/components/toolbar/ToolBar.svelte";
   import { column_definitions } from "$lib/definitions";
+  import { TauriApiService } from "$lib/services/TauriApiService";
   import { processStore } from "$lib/stores/processes";
   import type { VirtueMartOrder } from "$lib/types";
+  import { onMount } from "svelte";
 
-   $: ({
+  // Reactive store state destructuring
+  $: ({
     error,
     searchTerm,
     isLoading,
     currentPage,
+    itemsPerPage,
+    isFrozen
   } = $processStore);
 
-    $: columns = column_definitions.map((col) => ({
+  // Columns configuration
+  $: columns = column_definitions.map((col) => ({
     ...col,
-    visible:
-      col.required ||
-      (col.visible),
+    visible: col.required || col.visible
   }));
 
+  // Orders state
   let orders: VirtueMartOrder[] = [];
+
+  // Fetch orders from backend
+  async function fetchSyncedOrders() {
+    try {
+      processStore.setIsLoading(true);
+      
+      // Listen to sync events to update orders
+      const unlisten = await TauriApiService.listen('synced-orders', (event) => {
+        orders = event.payload || [];
+      });
+
+      // Trigger backend to fetch synced orders
+      await TauriApiService.invoke('get_synced_orders');
+    } catch (err) {
+      processStore.setError(String(err));
+    } finally {
+      processStore.setIsLoading(false);
+    }
+  }
+
+  // Mount lifecycle hook
+  onMount(() => {
+    fetchSyncedOrders();
+  });
 </script>
 
 <div class="app-container">
@@ -29,19 +58,26 @@
   <main>
     <StatsBar />
 
-    <ToolBar bind:searchTerm={$processStore.searchTerm} />
+    <ToolBar 
+      bind:searchTerm 
+      bind:itemsPerPage
+      bind:currentPage
+      bind:refreshRate={$processStore.refreshRate}
+      bind:isFrozen
+      totalPages={Math.ceil(orders.length / itemsPerPage)}
+      totalResults={orders.length}
+    />
 
-      {#if error}
-        <div class="alert">{error}</div>
-      {/if}
+    {#if error}
+      <div class="alert error">{error}</div>
+    {/if}
 
-      <OrdersTable {columns} bind:orders
-      />
+    <OrdersTable {columns} bind:orders />
   </main>
 </div>
 
 <style>
-    :global(:root) {
+  :global(:root) {
     --base: #1e1e2e;
     --mantle: #181825;
     --crust: #11111b;
@@ -65,7 +101,7 @@
     --teal: #94e2d5;
   }
 
-    :global(body) {
+  :global(body) {
     margin: 0;
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
@@ -89,5 +125,12 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
+  }
+
+  .alert.error {
+    background-color: var(--red);
+    color: var(--base);
+    padding: 10px;
+    text-align: center;
   }
 </style>

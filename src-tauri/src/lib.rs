@@ -7,6 +7,7 @@ pub mod utils;
 pub mod commands;
 
 use chrono::Utc;
+use commands::get_synced_orders;
 use env_logger::Env;
 use tauri::Emitter;
 use tauri::Manager;
@@ -42,6 +43,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_system_info,
+            get_synced_orders,
             save_config_command,
             load_config_command,
             start_sync_command,

@@ -2,10 +2,52 @@ use tauri::{AppHandle, Runtime, Emitter};
 use chrono::Utc;
 use std::time::SystemTime;
 use log::info;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
-use crate::models::{AppConfig, SyncStats, LogEntry};
+use crate::models::{AppConfig, LogEntry, SyncStats, VirtueMartOrder};
 use crate::config::{load_config, save_config};
 use crate::sync::{get_current_stats, perform_sync, update_sync_stats};
+
+lazy_static! {
+    static ref SYNCED_ORDERS: Mutex<Vec<VirtueMartOrder>> = Mutex::new(Vec::new());
+}
+
+/// Speichert synchronisierte Bestellungen
+pub fn store_synced_orders(orders: Vec<VirtueMartOrder>) {
+    let mut stored_orders = SYNCED_ORDERS.lock().unwrap();
+    *stored_orders = orders;
+}
+
+/// Fügt eine synchronisierte Bestellung hinzu
+pub fn add_synced_order<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, order: VirtueMartOrder) {
+    let mut stored_orders = SYNCED_ORDERS.lock().unwrap();
+    stored_orders.push(order);
+
+    // Debug-Log hinzufügen
+    info!("Bestellung zu SYNCED_ORDERS hinzugefügt. Aktuelle Anzahl: {}", stored_orders.len());
+
+    // Daten an das Frontend senden
+    app_handle.emit("synced-orders", stored_orders.clone())
+        .map_err(|e| format!("Failed to emit synced orders: {}", e));
+}
+
+
+#[tauri::command]
+pub async fn get_synced_orders<R: Runtime>(
+    app_handle: AppHandle<R>
+) -> Result<Vec<VirtueMartOrder>, String> {
+    info!("Requesting synced orders");
+    
+    let stored_orders = SYNCED_ORDERS.lock().unwrap().clone();
+    
+    // Emit the orders to the frontend
+    app_handle.emit("synced-orders", stored_orders.clone())
+        .map_err(|e| format!("Failed to emit synced orders: {}", e))?;
+    
+    Ok(stored_orders)
+}
+
 
 /// System-Informationen abrufen
 #[tauri::command]

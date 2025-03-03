@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppConfig, SyncStats } from "../types";
+import type { AppConfig, SyncStats, VirtueMartOrder } from "../types";
 
 export class TauriApiService {
   /**
@@ -53,6 +53,13 @@ export class TauriApiService {
    */
   static async startSync(config: AppConfig): Promise<SyncStats> {
     return invoke<SyncStats>("start_sync_command", { config });
+  }
+
+  /**
+   * Get synchronized orders
+   */
+  static async getSyncedOrders(): Promise<VirtueMartOrder[]> {
+    return invoke<VirtueMartOrder[]>("get_synced_orders");
   }
 
   /**

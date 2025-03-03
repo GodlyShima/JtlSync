@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use lazy_static::lazy_static;
 
 use crate::api::JtlApiClient;
+use crate::commands::add_synced_order;
 use crate::database::{connect_to_joomla, get_new_orders, get_order_items, get_shipping_address};
 use crate::models::LogEntry;
 use crate::utils::emit_event;
@@ -187,6 +188,9 @@ pub async fn perform_sync<R: tauri::Runtime>(
             stats.skipped_orders,
             stats.error_orders
         );
+
+				info!("Füge Bestellung {} zu SYNCED_ORDERS hinzu", order.order_number);
+				add_synced_order(app_handle, order.clone());
 
         sleep(Duration::from_millis(150)).await;
     }
