@@ -19,7 +19,8 @@ use models::LogEntry;
 use commands::{
     abort_sync_command, cancel_scheduled_sync, get_sync_stats, get_synced_orders, 
     get_system_info, load_config_command, save_config_command, schedule_sync, 
-    start_sync_command, start_scheduled_sync
+    start_sync_command, start_scheduled_sync, add_shop_command, update_shop_command,
+    remove_shop_command, set_current_shop_command
 };
 use notifications::{setup_notification_handler, show_notification_command};
 use tauri::Emitter;
@@ -43,6 +44,11 @@ fn main() {
             abort_sync_command,
             start_scheduled_sync,
             show_notification_command,
+            // New multi-shop commands
+            add_shop_command,
+            update_shop_command,
+            remove_shop_command,
+            set_current_shop_command,
         ])
         .setup(|app| {
             // First, set up the notification handler with the app
@@ -58,6 +64,7 @@ fn main() {
                 message: "Application started".to_string(),
                 level: "info".to_string(),
                 category: "system".to_string(),
+                shop_id: None,
             });
             
             Ok(())

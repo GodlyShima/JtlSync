@@ -9,23 +9,8 @@
   
   // Default config
   const defaultConfig: AppConfig = {
-    joomla: {
-      host: "w01539f0.kasserver.com",
-      user: "d0243b57",
-      password: "mallorca",
-      database: "d0243b57"
-    },
-    jtl: {
-      host: "localhost",
-      user: "root",
-      password: "",
-      database: "jtl"
-    },
-    tables: {
-      orders: "y13ci_virtuemart_orders",
-      orderItems: "y13ci_virtuemart_order_items",
-      customers: "y13ci_virtuemart_order_userinfos"
-    },
+    shops: [],
+    current_shop_index: 0,
     logFile: "",
     jtlApiPath: ""  // API path is no longer needed
   };

@@ -1,5 +1,6 @@
 <script lang="ts">
   import OrdersTable from "$lib/components/orders/OrdersTable.svelte";
+  import ShopManager from "$lib/components/ShopManager.svelte";
   import { StatsBar } from "$lib/components/stats";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ToolBar from "$lib/components/toolbar/ToolBar.svelte";
@@ -57,6 +58,7 @@
   <TitleBar />
   <main>
     <StatsBar />
+    <ShopManager />
 
     <ToolBar 
       bind:searchTerm 

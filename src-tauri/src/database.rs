@@ -2,15 +2,15 @@ use mysql::{OptsBuilder, Pool, Error as MySqlError, params, prelude::Queryable, 
 use chrono::{Utc, Duration};
 use log::{info, error};
 
-use crate::models::{AppConfig, VirtueMartOrder, VirtueMartOrderItem};
+use crate::models::{ShopConfig, VirtueMartOrder, VirtueMartOrderItem};
 
 /// Verbindung zur Joomla-Datenbank herstellen
-pub fn connect_to_joomla(config: &AppConfig) -> Result<Pool, MySqlError> {
+pub fn connect_to_joomla(shop: &ShopConfig) -> Result<Pool, MySqlError> {
     let opts = OptsBuilder::new()
-        .ip_or_hostname(Some(&config.joomla.host))
-        .user(Some(&config.joomla.user))
-        .pass(Some(&config.joomla.password))
-        .db_name(Some(&config.joomla.database));
+        .ip_or_hostname(Some(&shop.joomla.host))
+        .user(Some(&shop.joomla.user))
+        .pass(Some(&shop.joomla.password))
+        .db_name(Some(&shop.joomla.database));
     
     Pool::new(opts)
 }
@@ -26,12 +26,12 @@ fn mysql_date_to_string(value: Value) -> String {
 }
 
 /// Neue Bestellungen aus Joomla abrufen (letzte 24 Stunden)
-pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartOrder>, String> {
+pub fn get_new_orders(pool: &Pool, shop: &ShopConfig) -> Result<Vec<VirtueMartOrder>, String> {
     let now = Utc::now();
     let yesterday = now - Duration::days(1);
     let formatted_time = yesterday.format("%Y-%m-%d %H:%M:%S").to_string();
     
-    info!("Suche Bestellungen seit: {}", formatted_time);
+    info!("Suche Bestellungen seit: {} für Shop '{}'", formatted_time, shop.name);
     
     let query = format!(
         "SELECT o.*, c.*, 
@@ -40,11 +40,11 @@ pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartO
          JOIN {} c ON o.virtuemart_order_id = c.virtuemart_order_id
          WHERE o.created_on >= ? AND c.address_type = 'BT'
          ORDER BY o.created_on DESC",
-        config.tables.orders, config.tables.customers
+        shop.tables.orders, shop.tables.customers
     );
     
     let mut conn = pool.get_conn()
-        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank: {}", e))?;
+        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank für Shop '{}': {}", shop.name, e))?;
     
     let results = conn.exec_map(query, (formatted_time,), |row: Row| {
         // Hier müsstest du die Umwandlung von MySQL-Row zu VirtueMartOrder implementieren
@@ -59,15 +59,15 @@ pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartO
             mysql_date_to_string(raw_date)
         });
 
-				let phone_1: Option<String> = match row.get_opt::<String, _>("phone_1") {
-						Some(Ok(value)) => Some(value),
-						_ => None // Field doesn't exist or is NULL or has wrong type
-				};
-				
-				let phone_2: Option<String> = match row.get_opt::<String, _>("phone_2") {
-						Some(Ok(value)) => Some(value),
-						_ => None // Field doesn't exist or is NULL or has wrong type
-				};
+        let phone_1: Option<String> = match row.get_opt::<String, _>("phone_1") {
+            Some(Ok(value)) => Some(value),
+            _ => None // Field doesn't exist or is NULL or has wrong type
+        };
+        
+        let phone_2: Option<String> = match row.get_opt::<String, _>("phone_2") {
+            Some(Ok(value)) => Some(value),
+            _ => None // Field doesn't exist or is NULL or has wrong type
+        };
                         
         VirtueMartOrder {
             virtuemart_order_id: order_id,
@@ -78,8 +78,8 @@ pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartO
             order_status: row.get("order_status"),
             first_name: row.get("first_name"),
             last_name: row.get("last_name"),
-						phone_1,
-						phone_2,
+            phone_1,
+            phone_2,
             address_1: row.get("address_1"),
             address_2: row.get("address_2"),
             zip: row.get("zip"),
@@ -89,29 +89,30 @@ pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartO
             virtuemart_paymentmethod_id: row.get("virtuemart_paymentmethod_id"),
             virtuemart_shipmentmethod_id: row.get("virtuemart_shipmentmethod_id"),
             virtuemart_order_userinfo_id: row.get("virtuemart_order_userinfo_id"),
-            customer_note: row.get("customer_note").unwrap_or(Some(String::new())), // Wird für die Lieferadresse nicht benötigt
-						order_shipment: row.get("order_shipment"),
-    				coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
-        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
-						company: row.get("company").unwrap_or(Some(String::new()))
+            customer_note: row.get("customer_note").unwrap_or(Some(String::new())), 
+            order_shipment: row.get("order_shipment"),
+            coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
+            coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
+            company: row.get("company").unwrap_or(Some(String::new())),
+            shop_id: Some(shop.id.clone()),
         }
-    }).map_err(|e| format!("Fehler beim Abrufen der Bestellungen: {}", e))?;
+    }).map_err(|e| format!("Fehler beim Abrufen der Bestellungen für Shop '{}': {}", shop.name, e))?;
     
-    info!("Gefundene Bestellungen: {}", results.len());
+    info!("Gefundene Bestellungen für Shop '{}': {}", shop.name, results.len());
     Ok(results)
 }
 
 /// Bestellpositionen für eine Bestellung abrufen
-pub fn get_order_items(pool: &Pool, config: &AppConfig, order_id: i32) -> Result<Vec<VirtueMartOrderItem>, String> {
-    info!("Hole Bestellpositionen für Bestellung {}", order_id);
+pub fn get_order_items(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Result<Vec<VirtueMartOrderItem>, String> {
+    info!("Hole Bestellpositionen für Bestellung {} in Shop '{}'", order_id, shop.name);
     
     let query = format!(
         "SELECT * FROM {} WHERE virtuemart_order_id = ?",
-        config.tables.orderItems
+        shop.tables.orderItems
     );
     
     let mut conn = pool.get_conn()
-        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank: {}", e))?;
+        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank für Shop '{}': {}", shop.name, e))?;
     
     let results = conn.exec_map(query, (order_id,), |row: Row| {
         VirtueMartOrderItem {
@@ -124,23 +125,23 @@ pub fn get_order_items(pool: &Pool, config: &AppConfig, order_id: i32) -> Result
             product_tax: row.get("product_tax"),
             product_priceWithoutTax: row.get("product_priceWithoutTax"),
         }
-    }).map_err(|e| format!("Fehler beim Abrufen der Bestellpositionen: {}", e))?;
+    }).map_err(|e| format!("Fehler beim Abrufen der Bestellpositionen für Shop '{}': {}", shop.name, e))?;
     
-    info!("Bestellpositionen gefunden: {}", results.len());
+    info!("Bestellpositionen gefunden für Shop '{}': {}", shop.name, results.len());
     Ok(results)
 }
 
 /// Lieferadresse (ST) abrufen, falls vorhanden
-pub fn get_shipping_address(pool: &Pool, config: &AppConfig, order_id: i32) -> Result<Option<VirtueMartOrder>, String> {
-    info!("Prüfe Lieferadresse für Bestellung {}", order_id);
+pub fn get_shipping_address(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Result<Option<VirtueMartOrder>, String> {
+    info!("Prüfe Lieferadresse für Bestellung {} in Shop '{}'", order_id, shop.name);
     
     let query = format!(
         "SELECT * FROM {} WHERE virtuemart_order_id = ? AND address_type = 'ST'",
-        config.tables.customers
+        shop.tables.customers
     );
     
     let mut conn = pool.get_conn()
-        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank: {}", e))?;
+        .map_err(|e| format!("Fehler beim Verbinden zur Datenbank für Shop '{}': {}", shop.name, e))?;
     
     let results: Vec<VirtueMartOrder> = conn.exec_map(query, (order_id,), |row: Row| {
         VirtueMartOrder {
@@ -152,8 +153,8 @@ pub fn get_shipping_address(pool: &Pool, config: &AppConfig, order_id: i32) -> R
             order_status: None,           // Wird für die Lieferadresse nicht benötigt
             first_name: row.get("first_name").unwrap_or(Some(String::new())),
             last_name: row.get("last_name").unwrap_or(Some(String::new())),
-						phone_1: row.get("phone_1").unwrap_or(Some(String::new())),
-						phone_2: row.get("phone_2").unwrap_or(Some(String::new())),
+            phone_1: row.get("phone_1").unwrap_or(Some(String::new())),
+            phone_2: row.get("phone_2").unwrap_or(Some(String::new())),
             address_1: row.get("address_1").unwrap_or(Some(String::new())),
             address_2: row.get("address_2").unwrap_or(Some(String::new())),
             zip: row.get("zip"),
@@ -164,18 +165,19 @@ pub fn get_shipping_address(pool: &Pool, config: &AppConfig, order_id: i32) -> R
             virtuemart_shipmentmethod_id: None, // Wird für die Lieferadresse nicht benötigt
             virtuemart_order_userinfo_id: row.get("virtuemart_order_userinfo_id"),
             customer_note: row.get("customer_note").unwrap_or(Some(String::new())), // Wird für die Lieferadresse nicht benötigt
-						order_shipment: row.get("order_shipment"),
- 						coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
-        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
-						company: row.get("company").unwrap_or(Some(String::new()))
+            order_shipment: None,
+            coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
+            coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
+            company: row.get("company").unwrap_or(Some(String::new())),
+            shop_id: Some(shop.id.clone()),
         }
-    }).map_err(|e| format!("Fehler beim Abrufen der Lieferadresse: {}", e))?;
+    }).map_err(|e| format!("Fehler beim Abrufen der Lieferadresse für Shop '{}': {}", shop.name, e))?;
     
     if results.is_empty() {
-        info!("Keine separate Lieferadresse (ST) für Bestellung {} gefunden", order_id);
+        info!("Keine separate Lieferadresse (ST) für Bestellung {} in Shop '{}' gefunden", order_id, shop.name);
         Ok(None)
     } else {
-        info!("Separate Lieferadresse (ST) für Bestellung {} gefunden", order_id);
+        info!("Separate Lieferadresse (ST) für Bestellung {} in Shop '{}' gefunden", order_id, shop.name);
         Ok(Some(results[0].clone()))
     }
 }

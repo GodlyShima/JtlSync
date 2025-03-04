@@ -20,11 +20,20 @@ export interface TablesConfig {
   orderItems: string;
   customers: string;
 }
-// Application configuration
-export interface AppConfig {
+
+// Shop configuration - NEW
+export interface ShopConfig {
+  id: string;
+  name: string;
   joomla: DatabaseConfig;
   jtl: DatabaseConfig;
   tables: TablesConfig;
+}
+
+// Application configuration - UPDATED
+export interface AppConfig {
+  shops: ShopConfig[];
+  current_shop_index: number;
   logFile: string;
   jtlApiPath: string;
 }
@@ -37,14 +46,16 @@ export interface ToolConfig {
   };
 }
 
-// Synchronization statistics
+// Synchronization statistics - UPDATED
 export interface SyncStats {
+  shop_id?: string; // Optional shop_id for multi-shop support
   totalOrders: number;
   syncedOrders: number;
   skippedOrders: number;
   errorOrders: number;
   lastSyncTime: Date | null;
   nextScheduledRun: Date | null;
+  aborted?: boolean;
 }
 
 // JTL Order Item interface
@@ -58,7 +69,7 @@ export interface JtlOrderItem {
   PurchasePriceNet?: number;
 }
 
-// VirtueMart Order interface from the database
+// VirtueMart Order interface from the database - UPDATED
 export interface VirtueMartOrder {
   virtuemart_order_id: number;
   virtuemart_user_id: number;
@@ -87,14 +98,16 @@ export interface VirtueMartOrder {
   fax?: string;
   title?: string;
   virtuemart_order_userinfo_id: number;
+  shop_id?: string; // Added shop_id to track which shop this order belongs to
 }
 
-// Log entry interface for displaying logs
+// Log entry interface for displaying logs - UPDATED
 export interface LogEntry {
   timestamp: Date;
   message: string;
   level: "info" | "warn" | "error" | "debug";
   category: "sync" | "api" | "system";
+  shop_id?: string; // Added shop_id to track which shop this log belongs to
 }
 
 // System information interface

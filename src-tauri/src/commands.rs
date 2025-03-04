@@ -4,15 +4,16 @@ use std::time::SystemTime;
 use log::info;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering}; // Fixed import for Ordering
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
 
-use crate::models::{AppConfig, LogEntry, SyncStats, VirtueMartOrder};
-use crate::config::{load_config, save_config};
-use crate::sync::{get_current_stats, perform_sync, update_sync_stats};
+use crate::models::{AppConfig, LogEntry, SyncStats, VirtueMartOrder, ShopConfig};
+use crate::config::{load_config, save_config, add_shop, update_shop, remove_shop, set_current_shop, get_current_shop};
+use crate::sync::{get_current_stats, perform_sync, update_sync_stats, get_shop_stats};
 
 lazy_static! {
     static ref ABORT_FLAG: AtomicBool = AtomicBool::new(false);
-    static ref SYNCED_ORDERS: Mutex<Vec<VirtueMartOrder>> = Mutex::new(Vec::new());
+    static ref SYNCED_ORDERS: Mutex<HashMap<String, Vec<VirtueMartOrder>>> = Mutex::new(HashMap::new());
 }
 
 /// Prüft, ob die Synchronisierung abgebrochen werden soll
@@ -39,6 +40,7 @@ pub async fn abort_sync_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<
         message: "Synchronization aborted by user".to_string(),
         level: "warn".to_string(),
         category: "sync".to_string(),
+        shop_id: None,
     });
     
     Ok(())
@@ -48,15 +50,25 @@ pub async fn abort_sync_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<
 #[tauri::command]
 pub async fn start_scheduled_sync<R: Runtime>(
     app_handle: AppHandle<R>,
-    config: AppConfig,
+    shop_id: String,
     job_id: String
 ) -> Result<(), String> {
+    // Load config
+    let config = load_config()?;
+    
+    // Find the specific shop
+    let shop = config.shops.iter()
+        .find(|s| s.id == shop_id)
+        .ok_or_else(|| format!("Shop with ID '{}' not found", shop_id))?
+        .clone();
+    
     // Log über Start der geplanten Synchronisierung
     let _ = app_handle.emit("log", LogEntry {
         timestamp: Utc::now(),
-        message: format!("Starting scheduled synchronization for job {}", job_id),
+        message: format!("Starting scheduled synchronization for shop {} ({}), job {}", shop.name, shop.id, job_id),
         level: "info".to_string(),
         category: "sync".to_string(),
+        shop_id: Some(shop.id.clone()),
     });
     
     // Abort-Flag zurücksetzen vor dem Start
@@ -64,37 +76,40 @@ pub async fn start_scheduled_sync<R: Runtime>(
     
     // Hintergrundaufgabe für die Synchronisierung starten
     let app_handle_clone = app_handle.clone();
-    let config_clone = config.clone();
+    let shop_clone = shop.clone();
     
     tauri::async_runtime::spawn(async move {
-        match perform_sync(&app_handle_clone, &config_clone).await {
+        match perform_sync(&app_handle_clone, &config, &shop_clone).await {
             Ok(stats) => {
                 update_sync_stats(stats.clone());
                 
                 // Events senden
                 let _ = app_handle_clone.emit("sync-complete", stats.clone());
-                let _ = app_handle_clone.emit("scheduled-sync-completed", job_id.clone());
+                let _ = app_handle_clone.emit("scheduled-sync-completed", (job_id.clone(), shop_id.clone()));
                 
                 // Erfolg protokollieren
                 let _ = app_handle_clone.emit("log", LogEntry {
                     timestamp: Utc::now(),
-                    message: format!("Scheduled synchronization completed for job {}: {} synced, {} skipped, {} errors{}", 
-                                  job_id, stats.synced_orders, stats.skipped_orders, stats.error_orders,
+                    message: format!("Scheduled synchronization completed for shop {} ({}), job {}: {} synced, {} skipped, {} errors{}", 
+                                  shop_clone.name, shop_clone.id, job_id, stats.synced_orders, stats.skipped_orders, stats.error_orders,
                                   if stats.aborted { " (aborted)" } else { "" }),
                     level: "info".to_string(),
                     category: "sync".to_string(),
+                    shop_id: Some(shop_clone.id),
                 });
             },
             Err(e) => {
                 // Fehler protokollieren
-                let _ = app_handle_clone.emit("sync-error", e.clone());
-                let _ = app_handle_clone.emit("scheduled-sync-error", job_id.clone());
+                let _ = app_handle_clone.emit("sync-error", (e.clone(), shop_id.clone()));
+                let _ = app_handle_clone.emit("scheduled-sync-error", (job_id.clone(), shop_id.clone()));
                 
                 let _ = app_handle_clone.emit("log", LogEntry {
                     timestamp: Utc::now(),
-                    message: format!("Scheduled synchronization failed for job {}: {}", job_id, e),
+                    message: format!("Scheduled synchronization failed for shop {} ({}), job {}: {}", 
+                                 shop_clone.name, shop_clone.id, job_id, e),
                     level: "error".to_string(),
                     category: "sync".to_string(),
+                    shop_id: Some(shop_clone.id),
                 });
             }
         }
@@ -103,41 +118,78 @@ pub async fn start_scheduled_sync<R: Runtime>(
     Ok(())
 }
 
-/// Speichert synchronisierte Bestellungen
-pub fn store_synced_orders(orders: Vec<VirtueMartOrder>) {
+/// Speichert synchronisierte Bestellungen für einen bestimmten Shop
+pub fn store_synced_orders(shop_id: &str, orders: Vec<VirtueMartOrder>) {
     let mut stored_orders = SYNCED_ORDERS.lock().unwrap();
-    *stored_orders = orders;
+    
+    // Add shop_id to each order
+    let orders_with_shop_id = orders.into_iter()
+        .map(|mut order| {
+            order.shop_id = Some(shop_id.to_string());
+            order
+        })
+        .collect();
+    
+    stored_orders.insert(shop_id.to_string(), orders_with_shop_id);
 }
 
 /// Fügt eine synchronisierte Bestellung hinzu
-pub fn add_synced_order<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, order: VirtueMartOrder) {
+pub fn add_synced_order<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, shop_id: &str, order: VirtueMartOrder) {
     let mut stored_orders = SYNCED_ORDERS.lock().unwrap();
-    stored_orders.push(order);
-
-    // Debug-Log hinzufügen
-    info!("Bestellung zu SYNCED_ORDERS hinzugefügt. Aktuelle Anzahl: {}", stored_orders.len());
-
-    // Daten an das Frontend senden
-    app_handle.emit("synced-orders", stored_orders.clone())
-        .map_err(|e| format!("Failed to emit synced orders: {}", e));
+    
+    // Ensure there's an entry for this shop
+    if !stored_orders.contains_key(shop_id) {
+        stored_orders.insert(shop_id.to_string(), Vec::new());
+    }
+    
+    // Add shop_id to the order
+    let mut order_with_shop = order.clone();
+    order_with_shop.shop_id = Some(shop_id.to_string());
+    
+    // Add the order to the shop's list
+    if let Some(orders) = stored_orders.get_mut(shop_id) {
+        orders.push(order_with_shop.clone());
+        
+        // Debug-Log hinzufügen
+        info!("Bestellung zu SYNCED_ORDERS für Shop {} hinzugefügt. Aktuelle Anzahl: {}", shop_id, orders.len());
+        
+        // Daten an das Frontend senden
+        app_handle.emit("synced-orders", (shop_id.to_string(), orders.clone()))
+            .map_err(|e| format!("Failed to emit synced orders: {}", e)).ok();
+    }
 }
-
 
 #[tauri::command]
 pub async fn get_synced_orders<R: Runtime>(
-    app_handle: AppHandle<R>
+    app_handle: AppHandle<R>,
+    shop_id: Option<String>
 ) -> Result<Vec<VirtueMartOrder>, String> {
-    info!("getting synced orders");
+    info!("getting synced orders for shop: {:?}", shop_id);
     
-    let stored_orders = SYNCED_ORDERS.lock().unwrap().clone();
+    let stored_orders = SYNCED_ORDERS.lock().unwrap();
     
-    // Emit the orders to the frontend
-    app_handle.emit("synced-orders", stored_orders.clone())
-        .map_err(|e| format!("Failed to emit synced orders: {}", e))?;
-    
-    Ok(stored_orders)
+    // If shop_id is provided, return orders for that shop only
+    if let Some(id) = shop_id {
+        let orders = stored_orders.get(&id).cloned().unwrap_or_default();
+        
+        // Emit the orders to the frontend
+        app_handle.emit("synced-orders", (id.clone(), orders.clone()))
+            .map_err(|e| format!("Failed to emit synced orders: {}", e))?;
+        
+        Ok(orders)
+    } else {
+        // If no shop_id, return all orders from all shops
+        let all_orders: Vec<VirtueMartOrder> = stored_orders.values()
+            .flat_map(|orders| orders.clone())
+            .collect();
+        
+        // Emit all orders to the frontend
+        app_handle.emit("synced-orders-all", all_orders.clone())
+            .map_err(|e| format!("Failed to emit all synced orders: {}", e))?;
+        
+        Ok(all_orders)
+    }
 }
-
 
 /// System-Informationen abrufen
 #[tauri::command]
@@ -161,6 +213,7 @@ pub async fn save_config_command<R: Runtime>(app_handle: AppHandle<R>, config: A
                 message: "Configuration saved successfully".to_string(),
                 level: "info".to_string(),
                 category: "system".to_string(),
+                shop_id: None,
             });
             
             Ok(())
@@ -180,6 +233,7 @@ pub async fn load_config_command<R: Runtime>(app_handle: AppHandle<R>) -> Result
                 message: "Configuration loaded successfully".to_string(),
                 level: "info".to_string(),
                 category: "system".to_string(),
+                shop_id: None,
             });
             
             Ok(config)
@@ -188,48 +242,160 @@ pub async fn load_config_command<R: Runtime>(app_handle: AppHandle<R>) -> Result
     }
 }
 
+/// Shop hinzufügen
+#[tauri::command]
+pub async fn add_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    
+    add_shop(&mut config, shop.clone())?;
+    
+    // Log-Ereignis senden
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: format!("New shop '{}' added successfully", shop.name),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: Some(shop.id),
+    });
+    
+    Ok(config)
+}
+
+/// Shop aktualisieren
+#[tauri::command]
+pub async fn update_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    
+    update_shop(&mut config, shop.clone())?;
+    
+    // Log-Ereignis senden
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: format!("Shop '{}' updated successfully", shop.name),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: Some(shop.id),
+    });
+    
+    Ok(config)
+}
+
+/// Shop löschen
+#[tauri::command]
+pub async fn remove_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    
+    // Find shop name for logging before removing
+    let shop_name = config.shops.iter()
+        .find(|s| s.id == shop_id)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    
+    remove_shop(&mut config, &shop_id)?;
+    
+    // Log-Ereignis senden
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: format!("Shop '{}' removed successfully", shop_name),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: None,
+    });
+    
+    Ok(config)
+}
+
+/// Aktuellen Shop setzen
+#[tauri::command]
+pub async fn set_current_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    
+    set_current_shop(&mut config, &shop_id)?;
+    
+    // Find the shop name
+    let shop_name = config.shops.iter()
+        .find(|s| s.id == shop_id)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    
+    // Log-Ereignis senden
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: format!("Active shop changed to '{}'", shop_name),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: Some(shop_id),
+    });
+    
+    Ok(config)
+}
+
 /// Manuelle Synchronisierung starten
 #[tauri::command]
-pub async fn start_sync_command<R: Runtime>(app_handle: AppHandle<R>, config: AppConfig) -> Result<(), String> {
+pub async fn start_sync_command<R: Runtime>(
+    app_handle: AppHandle<R>, 
+    shop_id: Option<String>
+) -> Result<(), String> {
+    // Load the configuration
+    let config = load_config()?;
+    
+    // Determine which shop to sync
+    let shop = if let Some(id) = shop_id {
+        // Find the specific shop
+        config.shops.iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| format!("Shop with ID '{}' not found", id))?
+            .clone()
+    } else {
+        // Use the current shop
+        get_current_shop(&config)
+    };
+    
     // Log über Start der Synchronisierung
     let _ = app_handle.emit("log", LogEntry {
         timestamp: Utc::now(),
-        message: "Starting manual synchronization...".to_string(),
+        message: format!("Starting manual synchronization for shop '{}'...", shop.name),
         level: "info".to_string(),
         category: "sync".to_string(),
+        shop_id: Some(shop.id.clone()),
     });
+    
+    // Reset abort flag
+    reset_abort_flag();
     
     // Hintergrundaufgabe erstellen, um die Synchronisierung durchzuführen
     let app_handle_clone = app_handle.clone();
     let config_clone = config.clone();
+    let shop_clone = shop.clone();
     
     // Hintergrundaufgabe starten, damit wir die UI nicht blockieren
     tauri::async_runtime::spawn(async move {
-        match perform_sync(&app_handle_clone, &config_clone).await {
+        match perform_sync(&app_handle_clone, &config_clone, &shop_clone).await {
             Ok(stats) => {
                 update_sync_stats(stats.clone());
-
                 
                 // Erfolgs-Event mit einer Kopie der Statistiken senden
                 let _ = app_handle_clone.emit("sync-complete", stats.clone());
                 
                 // Erfolg loggen
-               let _ = app_handle_clone.emit("log", LogEntry {
+                let _ = app_handle_clone.emit("log", LogEntry {
                     timestamp: Utc::now(),
-                    message: format!("Synchronization completed: {} synced, {} skipped, {} errors", 
-                                   stats.synced_orders, stats.skipped_orders, stats.error_orders),
+                    message: format!("Synchronization completed for shop '{}': {} synced, {} skipped, {} errors", 
+                                   shop_clone.name, stats.synced_orders, stats.skipped_orders, stats.error_orders),
                     level: "info".to_string(),
                     category: "sync".to_string(),
-                }); 
+                    shop_id: Some(shop_clone.id),
+                });
             },
             Err(e) => {
                 // Fehler-Event senden
-                let _ = app_handle_clone.emit("sync-error", e.clone());
+                let _ = app_handle_clone.emit("sync-error", (e.clone(), shop_clone.id.clone()));
                 let _ = app_handle_clone.emit("log", LogEntry {
                     timestamp: Utc::now(),
-                    message: format!("Synchronization failed: {}", e),
+                    message: format!("Synchronization failed for shop '{}': {}", shop_clone.name, e),
                     level: "error".to_string(),
                     category: "sync".to_string(),
+                    shop_id: Some(shop_clone.id),
                 });
             }
         }
@@ -241,23 +407,31 @@ pub async fn start_sync_command<R: Runtime>(app_handle: AppHandle<R>, config: Ap
 
 /// Aktuelle Synchronisierungsstatistiken abrufen
 #[tauri::command]
-pub async fn get_sync_stats() -> Result<SyncStats, String> {
-    Ok(get_current_stats())
+pub async fn get_sync_stats(shop_id: Option<String>) -> Result<SyncStats, String> {
+    if let Some(id) = shop_id {
+        Ok(get_shop_stats(&id))
+    } else {
+        Ok(get_current_stats())
+    }
 }
 
 /// Synchronisierung planen
 #[tauri::command]
-pub async fn schedule_sync(cron_expression: String) -> Result<(), String> {
+pub async fn schedule_sync(shop_id: String, cron_expression: String) -> Result<(), String> {
     // In einer echten Implementierung würde ein Cron-Job oder Timer eingerichtet
     // Für jetzt loggen wir es einfach
-    info!("Scheduled sync with cron: {}", cron_expression);
+    info!("Scheduled sync for shop {} with cron: {}", shop_id, cron_expression);
     Ok(())
 }
 
 /// Geplante Synchronisierungsjobs abbrechen
 #[tauri::command]
-pub async fn cancel_scheduled_sync() -> Result<(), String> {
+pub async fn cancel_scheduled_sync(shop_id: Option<String>) -> Result<(), String> {
     // In einer echten Implementierung würden geplante Jobs abgebrochen
-    info!("Canceled all scheduled sync jobs");
+    if let Some(id) = shop_id {
+        info!("Canceled scheduled sync jobs for shop {}", id);
+    } else {
+        info!("Canceled all scheduled sync jobs");
+    }
     Ok(())
 }
