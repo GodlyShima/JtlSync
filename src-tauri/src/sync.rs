@@ -11,11 +11,13 @@ use lazy_static::lazy_static;
 
 use crate::api::JtlApiClient;
 use crate::commands::add_synced_order;
+use crate::commands::should_abort;
 use crate::database::{connect_to_joomla, get_new_orders, get_order_items, get_shipping_address};
 use crate::models::LogEntry;
 use crate::utils::emit_event;
 use crate::models::{AppConfig, SyncStats, JtlCustomer, JtlOrder, JtlOrderItem, JtlCountry, JtlPaymentDetails, JtlShippingDetails};
 use crate::utils::format_iso_date;
+use crate::utils::get_country_code;
 use crate::utils::{map_payment_method, create_address_object};
 
 lazy_static! {
@@ -26,6 +28,7 @@ lazy_static! {
         error_orders: 0,
         last_sync_time: None,
         next_scheduled_run: None,
+        aborted: false, // Initialisiere mit false
     });
 }
 
@@ -73,7 +76,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
 
     // JTL-API-Client initialisieren
     info!("Initialisiere JTL API Client...");
-    let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e"; // In der Produktion sollte dies aus der Konfiguration geladen werden
+    let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e";
     let client = JtlApiClient::new(api_key);
     
     // Neue Bestellungen abrufen
@@ -105,7 +108,9 @@ pub async fn perform_sync<R: tauri::Runtime>(
         error_orders: 0,
         last_sync_time: Some(Utc::now()),
         next_scheduled_run: None,
+        aborted: false, // Initialisiere mit false
     };
+    
     
 		update_sync_stats(stats.clone());
  		app_handle.emit("sync-stats-update", &stats)
@@ -121,6 +126,27 @@ pub async fn perform_sync<R: tauri::Runtime>(
     
     // Jede Bestellung verarbeiten
     for order in orders {
+
+				if should_abort() {
+            info!("Synchronisierung abgebrochen, stoppe nach aktueller Bestellung");
+            
+            let _ = app_handle.emit("log", LogEntry {
+                timestamp: Utc::now(),
+                message: "Synchronisierung auf Benutzeranfrage abgebrochen".to_string(),
+                level: "warn".to_string(),
+                category: "sync".to_string(),
+            });
+            
+            // Setze das aborted-Flag in stats
+            stats.aborted = true;
+            
+            update_sync_stats(stats.clone());
+            app_handle.emit("sync-stats-update", &stats)
+                .map_err(|e| format!("Failed to emit event: {}", e))?;
+                
+            break;
+        }
+
         info!("Verarbeite Bestellung: ID={}, Kunde={} {}", 
               order.virtuemart_order_id, 
               order.first_name.as_deref().unwrap_or(""), 
@@ -317,6 +343,7 @@ async fn process_order(
 
 						info!("CustomerId: {}", customer_id.clone());
 						info!("ExternalNumber: {}", order_number.clone());
+						info!("Coutrny: {} ID: {}", get_country_code(order.virtuemart_country_id.clone().unwrap_or_default()).unwrap_or_default().to_string(), order.virtuemart_country_id.clone().unwrap_or_default());
 
             let jtl_order = JtlOrder {
                 CustomerId: customer_id.parse::<i32>().unwrap_or_default(),
@@ -395,7 +422,7 @@ async fn process_order(
                     
                     // Falls bereits bezahlt
                     if let Some(status) = &order.order_status {
-                        if status == "C" {
+                        if status == "C" && jtl_payment_method_id != 4 {
                             info!("Bestellung {} ist bezahlt -> setze auf bezahlt", order_number);
                             match client.set_payment_paid(&order_id).await {
                                 Ok(_) => {},

@@ -1,5 +1,8 @@
+// Update to src/lib/services/TauriApiService.ts
+
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppConfig, SyncStats, VirtueMartOrder } from "../types";
 
 export class TauriApiService {
@@ -32,6 +35,26 @@ export class TauriApiService {
   ): Promise<void> {
     const unlistenFn = await listen(event, callback);
     unlistenFn();
+  }
+
+  /**
+   * Show notification
+   * This will emit an event that our Rust backend needs to handle
+   */
+  static async showNotification(options: {
+    title: string;
+    body: string;
+  }): Promise<void> {
+    // We'll emit an event that our Rust backend will handle
+    const appWindow = await getCurrentWindow();
+    return appWindow.emit("show-notification", options);
+  }
+
+  /**
+   * Abort the current synchronization
+   */
+  static async abortSync(): Promise<void> {
+    return invoke<void>("abort_sync_command");
   }
 
   /**

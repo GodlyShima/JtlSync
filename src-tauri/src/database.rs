@@ -84,15 +84,16 @@ pub fn get_new_orders(pool: &Pool, config: &AppConfig) -> Result<Vec<VirtueMartO
             address_2: row.get("address_2"),
             zip: row.get("zip"),
             city: row.get("city"),
-            country_2_code: row.get("country_2_code"),
+            virtuemart_country_id: row.get("virtuemart_country_id").unwrap_or(Some(81)),
             email: row.get("email"),
             virtuemart_paymentmethod_id: row.get("virtuemart_paymentmethod_id"),
             virtuemart_shipmentmethod_id: row.get("virtuemart_shipmentmethod_id"),
             virtuemart_order_userinfo_id: row.get("virtuemart_order_userinfo_id"),
-            customer_note: row.get("customer_note"),
+            customer_note: row.get("customer_note").unwrap_or(Some(String::new())), // Wird für die Lieferadresse nicht benötigt
 						order_shipment: row.get("order_shipment"),
     				coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
-        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0))
+        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
+						company: row.get("company").unwrap_or(Some(String::new()))
         }
     }).map_err(|e| format!("Fehler beim Abrufen der Bestellungen: {}", e))?;
     
@@ -157,15 +158,16 @@ pub fn get_shipping_address(pool: &Pool, config: &AppConfig, order_id: i32) -> R
             address_2: row.get("address_2").unwrap_or(Some(String::new())),
             zip: row.get("zip"),
             city: row.get("city"),
-            country_2_code: row.get("country_2_code"),
+            virtuemart_country_id: row.get("virtuemart_country_id").unwrap_or(Some(81)),
             email: row.get("email").unwrap_or(Some(String::new())),
             virtuemart_paymentmethod_id: None, // Wird für die Lieferadresse nicht benötigt
             virtuemart_shipmentmethod_id: None, // Wird für die Lieferadresse nicht benötigt
             virtuemart_order_userinfo_id: row.get("virtuemart_order_userinfo_id"),
-            customer_note: None, // Wird für die Lieferadresse nicht benötigt
+            customer_note: row.get("customer_note").unwrap_or(Some(String::new())), // Wird für die Lieferadresse nicht benötigt
 						order_shipment: row.get("order_shipment"),
  						coupon_code: row.get("coupon_code").unwrap_or(Some(String::new())),
-        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0))
+        		coupon_discount: row.get("coupon_discount").unwrap_or(Some(0.0)),
+						company: row.get("company").unwrap_or(Some(String::new()))
         }
     }).map_err(|e| format!("Fehler beim Abrufen der Lieferadresse: {}", e))?;
     

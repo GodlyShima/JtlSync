@@ -10,14 +10,18 @@ mod api;
 mod sync;
 mod utils;
 mod commands;
+mod notifications;
 
 use chrono::Utc;
 use env_logger::Env;
 
 use models::LogEntry;
 use commands::{
-    cancel_scheduled_sync, get_sync_stats, get_synced_orders, get_system_info, load_config_command, save_config_command, schedule_sync, start_sync_command
+    abort_sync_command, cancel_scheduled_sync, get_sync_stats, get_synced_orders, 
+    get_system_info, load_config_command, save_config_command, schedule_sync, 
+    start_sync_command, start_scheduled_sync
 };
+use notifications::{setup_notification_handler, show_notification_command};
 use tauri::Emitter;
 
 fn main() {
@@ -36,12 +40,19 @@ fn main() {
             get_sync_stats,
             schedule_sync,
             cancel_scheduled_sync,
+            abort_sync_command,
+            start_scheduled_sync,
+            show_notification_command,
         ])
         .setup(|app| {
-            // System initialisieren
+            // First, set up the notification handler with the app
+            // This consumes the mutable borrow of app
+            setup_notification_handler(app)?;
+            
+            // Now that we're done with the mutable borrow, we can create an immutable borrow
             let app_handle = app.handle();
             
-            // Anwendungsstart loggen
+            // Log application start
             let _ = app_handle.emit("log", LogEntry {
                 timestamp: Utc::now(),
                 message: "Application started".to_string(),

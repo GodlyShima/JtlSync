@@ -35,7 +35,23 @@ pub struct SyncStats {
     pub error_orders: i32,
     pub last_sync_time: Option<DateTime<Utc>>,
     pub next_scheduled_run: Option<DateTime<Utc>>,
+    pub aborted: bool,  // Neues Feld zur Verfolgung, ob synchronisierung abgebrochen wurde
 }
+
+impl Default for SyncStats {
+    fn default() -> Self {
+        SyncStats {
+            total_orders: 0,
+            synced_orders: 0,
+            skipped_orders: 0,
+            error_orders: 0,
+            last_sync_time: None,
+            next_scheduled_run: None,
+            aborted: false,
+        }
+    }
+}
+
 
 // Log-Eintrags-Struktur für das Frontend
 #[derive(Serialize, Clone)]
@@ -53,6 +69,7 @@ pub struct VirtueMartOrder {
     pub order_number: String,
     pub created_on: String,
     pub order_total: f64,
+		pub company: Option<String>,
     pub virtuemart_user_id: Option<i32>,
     pub order_status: Option<String>,
     pub first_name: Option<String>,
@@ -63,7 +80,6 @@ pub struct VirtueMartOrder {
     pub address_2: Option<String>,
     pub zip: Option<String>,
     pub city: Option<String>,
-    pub country_2_code: Option<String>,
     pub email: Option<String>,
     pub virtuemart_paymentmethod_id: Option<i32>,
     pub virtuemart_shipmentmethod_id: Option<i32>,
@@ -71,7 +87,8 @@ pub struct VirtueMartOrder {
     pub customer_note: Option<String>,
 		pub order_shipment: Option<f64>,
 		pub coupon_code: Option<String>,
-		pub coupon_discount: Option<f64>
+		pub coupon_discount: Option<f64>,
+    pub virtuemart_country_id: Option<i32>
 }
 
 // VirtueMart-Bestellpositionsstruktur
