@@ -14,13 +14,46 @@ pub mod notifications;
 pub mod sync;
 pub mod utils;
 
-// Public exports
-pub use commands::*;
+// Explicitly export specific commands
+pub use commands::{
+    // Config commands
+    config::{
+        load_config_command,
+        save_config_command,
+        add_shop_command,
+        update_shop_command,
+        remove_shop_command,
+        set_current_shop_command,
+    },
+    
+    // Sync commands
+    sync::{
+        start_sync_command,
+        abort_sync_command,
+        get_sync_stats,
+        get_synced_orders,
+        start_multi_sync_command,
+        set_sync_hours,
+        schedule_sync,
+        cancel_scheduled_sync,
+        start_scheduled_sync,
+    },
+    
+    // System commands
+    system::get_system_info,
+};
+
+// Export notification commands
+pub use notifications::{
+    setup_notification_handler,
+    show_notification_command,
+};
+
+// Reuse other existing exports
 pub use config::{load_config, save_config};
-pub use notifications::{setup_notification_handler, show_notification_command};
+pub use notifications::show_notification;
 pub use sync::SyncEngine;
 
-/// Initialize the application
 /// Initialize the application
 pub fn init() -> error::Result<()> {
     // Make sure we only initialize the logger once
@@ -36,6 +69,5 @@ pub fn init() -> error::Result<()> {
     }
     
     // Initialize other components as needed
-    
     Ok(())
 }

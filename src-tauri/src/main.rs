@@ -4,7 +4,7 @@
 )]
 
 use chrono::Utc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use std::error::Error;
 
 // Import modules
@@ -12,13 +12,23 @@ use jtlsync_lib::{
     // Commands
     commands::{
         // Config commands
-        load_config_command, save_config_command, add_shop_command, 
-        update_shop_command, remove_shop_command, set_current_shop_command,
+        load_config_command, 
+        save_config_command, 
+        add_shop_command, 
+        update_shop_command, 
+        remove_shop_command, 
+        set_current_shop_command,
         
         // Sync commands
-        start_sync_command, abort_sync_command, get_sync_stats, 
-        get_synced_orders, start_multi_sync_command, set_sync_hours,
-        schedule_sync, cancel_scheduled_sync, start_scheduled_sync,
+        start_sync_command, 
+        abort_sync_command, 
+        get_sync_stats, 
+        get_synced_orders, 
+        start_multi_sync_command, 
+        set_sync_hours,
+        schedule_sync, 
+        cancel_scheduled_sync, 
+        start_scheduled_sync,
         
         // System commands
         get_system_info,
@@ -76,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let app_handle = app.app_handle();
             
             // Log application start
-            let _ = app_handle.emit_all("log", LogEntry {
+            let _ = app_handle.emit("log", LogEntry {
                 timestamp: Utc::now(),
                 message: "Application started".to_string(),
                 level: "info".to_string(),
@@ -86,8 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Error while running application");
+        .run(tauri::generate_context!())?;
     
     Ok(())
 }
