@@ -439,6 +439,7 @@
     flex: 1;
     overflow-y: auto;
     max-height: 70vh;
+    padding: 10px;
   }
   
   .error-message {

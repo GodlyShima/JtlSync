@@ -7,46 +7,56 @@ use chrono::Utc;
 use tauri::{Emitter, Manager};
 use std::error::Error;
 
-use jtlsync_lib::commands::{
-    load_config_command,
-    save_config_command,
-    add_shop_command,
-    update_shop_command,
-    remove_shop_command,
-    set_current_shop_command,
-    start_sync_command,
-    abort_sync_command,
-    get_sync_stats,
-    get_synced_orders,
-    start_multi_sync_command,
-    set_sync_hours,
-    schedule_sync,
-    cancel_scheduled_sync,
-    start_scheduled_sync,
-    get_system_info,
+
+use jtlsync_lib::{
+    
+    // Notifications
+    notifications::{setup_notification_handler, show_notification_command},
+    
+    // Models
+    models::LogEntry,
+    
+    // Initialization
+    init,
 };
-use jtlsync_lib::notifications::{setup_notification_handler, show_notification_command};
-use jtlsync_lib::models::LogEntry;
-use jtlsync_lib::init;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Initialize the application
     init()?;
-
+    
     println!("JTL-VirtueMart Sync starting...");
-
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            // Config commands
             jtlsync_lib::commands::config::load_config_command,
+            jtlsync_lib::commands::config::save_config_command,
+            jtlsync_lib::commands::config::add_shop_command,
+            jtlsync_lib::commands::config::update_shop_command,
+            jtlsync_lib::commands::config::remove_shop_command,
+            jtlsync_lib::commands::config::set_current_shop_command,
+
+            jtlsync_lib::commands::sync::start_sync_command,
+            jtlsync_lib::commands::sync::start_multi_sync_command,
+            jtlsync_lib::commands::sync::get_sync_stats,
+            jtlsync_lib::commands::sync::set_sync_hours,
+            jtlsync_lib::commands::sync::schedule_sync,
+            jtlsync_lib::commands::sync::cancel_scheduled_sync,
+            jtlsync_lib::commands::sync::abort_sync_command,
+            jtlsync_lib::commands::sync::start_scheduled_sync,
+            jtlsync_lib::commands::sync::get_synced_orders,
+
+            jtlsync_lib::commands::system::get_system_info,
+            
         ])
         .setup(|app| {
             // Set up the notification handler
             setup_notification_handler(app)?;
-
+            
             // Get app handle for logging
             let app_handle = app.app_handle();
-
+            
             // Log application start
             let _ = app_handle.emit("log", LogEntry {
                 timestamp: Utc::now(),
@@ -55,10 +65,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 category: "system".to_string(),
                 shop_id: None,
             });
-
+            
             Ok(())
         })
         .run(tauri::generate_context!())?;
-
+    
     Ok(())
 }

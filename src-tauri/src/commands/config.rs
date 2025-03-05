@@ -6,6 +6,8 @@ use crate::config::app::AppConfig;
 use crate::config::shop::ShopConfig;
 use crate::models::LogEntry;
 use crate::error::{Result, Error};
+use tauri::ipc::InvokeError;
+use anyhow::Context;
 
 /// Save configuration
 #[tauri::command]

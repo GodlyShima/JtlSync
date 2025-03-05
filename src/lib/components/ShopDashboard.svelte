@@ -762,11 +762,12 @@ async function setCurrentShop(shopId: string) {
     gap: 0.75rem;
     overflow-y: auto;
     padding-right: 0.25rem;
+    padding: 15px;
   }
   
   .error-message {
     margin: 0.5rem 0;
-    padding: 0.5rem;
+    padding: 1rem;
     background-color: rgba(243, 139, 168, 0.1);
     border-left: 3px solid var(--red);
     color: var(--red);
