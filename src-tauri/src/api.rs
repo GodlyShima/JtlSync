@@ -234,4 +234,31 @@ impl JtlApiClient {
                 Err(e) => Err(format!("Fehler bei der Anfrage: {}", e))
             }
     }
+
+		pub async fn set_order_hold(&self, order_id: &String) -> Result<(), String> {
+        let url = format!("{}/salesOrders/{}/workflowEvents", self.base_url, order_id);
+        
+        // Bestellstatus "Bezahlt" (ID 15)
+        let payload = r#"{"Id": 16}"#;
+        
+        match self.client.post(&url)
+            .headers(self.create_headers())
+            .body(payload)
+            .send()
+            .await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_success() {
+                        info!("Bestellung {} erfolgreich auf bezahlt gesetzt", order_id);
+                        Ok(())
+                    } else {
+                        // Fehlerdetails aus der Antwort extrahieren
+                        let error_text = response.text().await.unwrap_or_else(|_| "Unbekannter Fehler".to_string());
+                        Err(format!("Fehler beim Setzen des Bestellstatus: HTTP Status {} - {}", 
+                                    status, error_text))
+                    }
+                },
+                Err(e) => Err(format!("Fehler bei der Anfrage: {}", e))
+            }
+    }
 }

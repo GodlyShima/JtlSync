@@ -2,12 +2,12 @@
   "shops": [
     {
       "id": "shop_10fi1jc",
-      "name": "test",
+      "name": "obstkisten-online.de",
       "joomla": {
-        "host": "test",
-        "user": "test",
-        "password": "test",
-        "database": "test"
+        "host": "w01539f0.kasserver.com",
+        "user": "d0243b57",
+        "password": "mallorca",
+        "database": "d0243b57"
       },
       "jtl": {
         "host": "localhost",
@@ -16,9 +16,30 @@
         "database": "jtl"
       },
       "tables": {
-        "orders": "jos_virtuemart_orders",
-        "orderItems": "jos_virtuemart_order_items",
-        "customers": "jos_virtuemart_order_userinfos"
+        "orders": "y13ci_virtuemart_orders",
+        "orderItems": "y13ci_virtuemart_order_items",
+        "customers": "y13ci_virtuemart_order_userinfos"
+      }
+    },
+    {
+      "id": "shop_woi3x0i",
+      "name": "weinkisten-shop.de",
+      "joomla": {
+        "host": "w01539f0.kasserver.com",
+        "user": "d042faa7",
+        "password": "1cbc527174389f539f94fb69",
+        "database": "d042faa7"
+      },
+      "jtl": {
+        "host": "localhost",
+        "user": "root",
+        "password": "",
+        "database": "jtl"
+      },
+      "tables": {
+        "orders": "yt5md_virtuemart_orders",
+        "orderItems": "yt5md_virtuemart_order_items",
+        "customers": "yt5md_virtuemart_order_userinfos"
       }
     }
   ],

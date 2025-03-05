@@ -291,14 +291,7 @@ async fn process_order(
     shop: &ShopConfig
 ) -> Result<bool, String> {
     // Kundennummer erstellen mit Shop-ID-Prefix für Eindeutigkeit zwischen Shops
-    let customer_number = match order.virtuemart_order_userinfo_id {
-        Some(id) => format!("{}-VM{}", shop.id, id),
-        None => {
-            warn!("Keine virtuemart_order_userinfo_id für Bestellung {} in Shop '{}'", 
-                  order.virtuemart_order_id, shop.name);
-            format!("{}-VM{}", shop.id, order.virtuemart_order_id)
-        }
-    };
+    let customer_number = format!("VM{}", order.virtuemart_order_userinfo_id.clone().unwrap_or_default().to_string());
     
     info!("Kundennummer aus Joomla für Shop '{}': {}", shop.name, customer_number);
     
@@ -309,11 +302,8 @@ async fn process_order(
     let jtl_payment_method_id = map_payment_method(order.virtuemart_paymentmethod_id);
     
     // Bestellnummer mit Shop-ID-Prefix für Eindeutigkeit zwischen Shops
-    let order_number = if !order.order_number.is_empty() {
-        format!("{}-{}", shop.id, order.order_number)
-    } else {
-        format!("{}-VM{}", shop.id, order.virtuemart_order_id)
-    };
+    let order_number = format!("VM{}", order.virtuemart_order_id);
+
     
     // Prüfen, ob der Kunde bereits existiert
     match client.get_customer_by_id(&customer_number).await {
@@ -477,6 +467,12 @@ async fn process_order(
                             }
                         }
                     }
+
+
+										match client.set_order_hold(&order_id).await {
+											Ok(_) => {},
+                      Err(e) => warn!("Fehler beim Setzen der Bestellung auf In Prüfung '{}': {}", shop.name, e)
+										}
                     
                     Ok(true)
                 },

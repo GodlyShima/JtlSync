@@ -1,9 +1,13 @@
-// Update to src/lib/services/TauriApiService.ts
+// src/lib/services/TauriApiService.ts
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { AppConfig, SyncStats, VirtueMartOrder } from "../types";
+import type {
+  AppConfig,
+  ShopConfig,
+  SyncStats,
+  VirtueMartOrder,
+} from "../types";
 
 export class TauriApiService {
   /**
@@ -45,9 +49,7 @@ export class TauriApiService {
     title: string;
     body: string;
   }): Promise<void> {
-    // We'll emit an event that our Rust backend will handle
-    const appWindow = await getCurrentWindow();
-    return appWindow.emit("show-notification", options);
+    return invoke<void>("show_notification_command", { notification: options });
   }
 
   /**
@@ -65,38 +67,56 @@ export class TauriApiService {
   }
 
   /**
-   * Get current sync statistics
+   * Get sync statistics for a specific shop or all shops
    */
-  static async getSyncStats(): Promise<SyncStats> {
-    return invoke<SyncStats>("get_sync_stats");
+  static async getSyncStats(shopId?: string): Promise<SyncStats> {
+    return invoke<SyncStats>(
+      "get_sync_stats",
+      shopId ? { shop_id: shopId } : {}
+    );
   }
 
   /**
-   * Start the synchronization process
+   * Start the synchronization process for a specific shop
    */
-  static async startSync(config: AppConfig): Promise<SyncStats> {
-    return invoke<SyncStats>("start_sync_command", { config });
+  static async startSync(shopId?: string): Promise<void> {
+    return invoke<void>(
+      "start_sync_command",
+      shopId ? { shop_id: shopId } : {}
+    );
   }
 
   /**
-   * Get synchronized orders
+   * Get synchronized orders for a specific shop or all shops
    */
-  static async getSyncedOrders(): Promise<VirtueMartOrder[]> {
-    return invoke<VirtueMartOrder[]>("get_synced_orders");
+  static async getSyncedOrders(shopId?: string): Promise<VirtueMartOrder[]> {
+    return invoke<VirtueMartOrder[]>(
+      "get_synced_orders",
+      shopId ? { shop_id: shopId } : {}
+    );
   }
 
   /**
    * Schedule a sync operation
    */
-  static async scheduleSync(cronExpression: string): Promise<void> {
-    return invoke<void>("schedule_sync", { cronExpression });
+  static async scheduleSync(
+    shopId: string,
+    cronExpression: string
+  ): Promise<void> {
+    return invoke<void>("schedule_sync", {
+      shop_id: shopId,
+      cron_expression: cronExpression,
+    });
   }
 
   /**
-   * Cancel scheduled sync jobs
+   * Cancel scheduled sync jobs for a specific shop or all shops
    */
-  static async cancelScheduledSync(): Promise<void> {
-    return invoke<void>("cancel_scheduled_sync");
+  static async cancelScheduledSync(shopId?: string): Promise<void> {
+    return invoke<void>(
+      "cancel_scheduled_sync",
+      shopId ? { shop_id: shopId } : {}
+    );
   }
 
   /**
@@ -111,5 +131,33 @@ export class TauriApiService {
    */
   static async saveConfig(config: AppConfig): Promise<void> {
     return invoke<void>("save_config_command", { config });
+  }
+
+  /**
+   * Add a new shop
+   */
+  static async addShop(shop: ShopConfig): Promise<AppConfig> {
+    return invoke<AppConfig>("add_shop_command", { shop });
+  }
+
+  /**
+   * Update an existing shop
+   */
+  static async updateShop(shop: ShopConfig): Promise<AppConfig> {
+    return invoke<AppConfig>("update_shop_command", { shop });
+  }
+
+  /**
+   * Remove a shop
+   */
+  static async removeShop(shopId: string): Promise<AppConfig> {
+    return invoke<AppConfig>("remove_shop_command", { shop_id: shopId });
+  }
+
+  /**
+   * Set current active shop
+   */
+  static async setCurrentShop(shopId: string): Promise<AppConfig> {
+    return invoke<AppConfig>("set_current_shop_command", { shop_id: shopId });
   }
 }
