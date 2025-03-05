@@ -33,12 +33,11 @@ use jtl_sync::{
     init,
 };
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the application
-    if let Err(e) = init() {
-        eprintln!("Error initializing application: {}", e);
-        std::process::exit(1);
-    }
+    init()?;
+    
+    println!("JTL-VirtueMart Sync starting...");
     
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -85,6 +84,7 @@ fn main() {
             
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    .run(tauri::generate_context!())?;
+    
+    Ok(())
 }
