@@ -14,44 +14,13 @@ pub mod notifications;
 pub mod sync;
 pub mod utils;
 
-// Explicitly export specific commands
-pub use commands::{
-    // Config commands
-    config::{
-        load_config_command,
-        save_config_command,
-        add_shop_command,
-        update_shop_command,
-        remove_shop_command,
-        set_current_shop_command,
-    },
-    
-    // Sync commands
-    sync::{
-        start_sync_command,
-        abort_sync_command,
-        get_sync_stats,
-        get_synced_orders,
-        start_multi_sync_command,
-        set_sync_hours,
-        schedule_sync,
-        cancel_scheduled_sync,
-        start_scheduled_sync,
-    },
-    
-    // System commands
-    system::get_system_info,
-};
 
-// Export notification commands
-pub use notifications::{
-    setup_notification_handler,
-    show_notification_command,
-};
+// Export notification command
+pub use notifications::show_notification_command;
 
-// Reuse other existing exports
+// Other exports
 pub use config::{load_config, save_config};
-pub use notifications::show_notification;
+pub use notifications::setup_notification_handler;
 pub use sync::SyncEngine;
 
 /// Initialize the application

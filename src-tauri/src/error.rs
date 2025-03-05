@@ -1,5 +1,7 @@
-use std::fmt;
-use std::error::Error as StdError;
+use std::fmt; 
+use std::error::Error as StdError; 
+use tauri::ipc::InvokeError;
+use anyhow::anyhow;
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,6 +29,7 @@ impl fmt::Display for Error {
 }
 
 impl StdError for Error {}
+
 
 // From implementations for common error types
 impl From<mysql::Error> for Error {
