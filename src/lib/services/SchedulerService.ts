@@ -2,7 +2,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { get, writable } from "svelte/store";
-import { TauriApiService } from "./TauriApiService";
 
 interface ScheduledJob {
   id: string;
@@ -11,6 +10,7 @@ interface ScheduledJob {
   lastRun: string | null;
   nextRun: string | null;
   enabled: boolean;
+  shopIds: string[]; // Array of shop IDs to sync
 }
 
 export interface ScheduleStore {
@@ -203,8 +203,11 @@ function shouldRunJob(job: ScheduledJob): boolean {
 // UI timer to update countdown displays
 let uiUpdateInterval: number | null = null;
 
+// The interval for the scheduler
+let schedulerInterval: number | null = null;
+
 // Start the scheduler
-export async function startScheduler() {
+export async function startScheduler(): Promise<void> {
   if (get(scheduleStore).isSchedulerRunning) return;
 
   scheduleStore.setSchedulerRunning(true);
@@ -228,11 +231,18 @@ export async function startScheduler() {
   }, 30000) as unknown as number;
 
   // Start the scheduler interval for checking jobs (every minute)
-  const interval = setInterval(async () => {
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval);
+  }
+
+  schedulerInterval = setInterval(async () => {
     const { jobs, isSchedulerRunning } = get(scheduleStore);
 
     if (!isSchedulerRunning) {
-      clearInterval(interval);
+      if (schedulerInterval) {
+        clearInterval(schedulerInterval);
+        schedulerInterval = null;
+      }
       if (uiUpdateInterval) {
         clearInterval(uiUpdateInterval);
         uiUpdateInterval = null;
@@ -247,9 +257,14 @@ export async function startScheduler() {
         console.log(`Running scheduled job: ${job.name}`);
 
         try {
-          // Get config and run the sync
-          const config = await TauriApiService.loadConfig();
-          await invoke("start_scheduled_sync", { config, jobId: job.id });
+          // Determine which shops to sync
+          const shopIds = job.shopIds?.length > 0 ? job.shopIds : [];
+
+          // Run the sync with the provided shop IDs - PARAMETER KORREKTUR HIER
+          await invoke("start_scheduled_sync", {
+            shop_ids: shopIds, // Geändert von shopIds zu shop_ids
+            job_id: job.id, // Geändert von jobId zu job_id
+          });
 
           // Update job's last run time
           const now = new Date();
@@ -262,8 +277,7 @@ export async function startScheduler() {
 
           await scheduleStore.saveJobs();
 
-          // Show a notification using native dialog since we don't have Tauri notification API
-          // We'll use a custom event that our Rust backend will handle to show a system notification
+          // Show a notification
           const appWindow = await getCurrentWindow();
           await appWindow.emit("show-notification", {
             title: "Geplante Synchronisation gestartet",
@@ -282,20 +296,15 @@ export async function startScheduler() {
       }
     }
   }, 60000); // Check every minute
-
-  return () => {
-    clearInterval(interval);
-    if (uiUpdateInterval) {
-      clearInterval(uiUpdateInterval);
-      uiUpdateInterval = null;
-    }
-    scheduleStore.setSchedulerRunning(false);
-  };
 }
 
 // Stop the scheduler
-export function stopScheduler() {
+export function stopScheduler(): void {
   scheduleStore.setSchedulerRunning(false);
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+  }
   if (uiUpdateInterval) {
     clearInterval(uiUpdateInterval);
     uiUpdateInterval = null;
@@ -305,7 +314,8 @@ export function stopScheduler() {
 // Add a new scheduled job
 export async function addScheduledJob(
   name: string,
-  cronExpression: string
+  cronExpression: string,
+  shopIds: string[] = []
 ): Promise<string> {
   const nextRun = getNextRunFromCron(cronExpression);
 
@@ -315,6 +325,7 @@ export async function addScheduledJob(
     lastRun: null,
     nextRun: nextRun ? nextRun.toISOString() : null,
     enabled: true,
+    shopIds: shopIds,
   });
 
   await scheduleStore.saveJobs();

@@ -1,6 +1,8 @@
 <!-- src/lib/components/schedule/SchedulePanel.svelte -->
 <script lang="ts">
   import { addScheduledJob, getNextRunText, scheduleStore, startScheduler, stopScheduler } from '$lib/services/SchedulerService';
+  import { TauriApiService } from "$lib/services/TauriApiService";
+  import type { AppConfig } from "$lib/types";
   import { faCalendarAlt, faPause, faPlay, faSync, faTimes, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -10,32 +12,61 @@
   let newJobTime = '01:00'; // Default to 1:00 AM
   let isAddingJob = false;
   let error: string | null = null;
+  let config: AppConfig;
+  let selectedShopIds: string[] = [];
   
   // For manual refresh functionality
   let lastUpdated = new Date();
   
-  // Start the scheduler on mount
+  // For cleanup of intervals
+  let refreshInterval: number | null = null;
+  
+  // Initialize on mount
   onMount(() => {
-    startScheduler().catch(err => {
-      console.error('Failed to start scheduler:', err);
-      error = `Failed to start scheduler: ${err}`;
-    });
-    
-    // Add an interval to refresh the "lastUpdated" time every 30 seconds
-    // This will force Svelte to re-evaluate getNextRunText for all jobs
-    const refreshInterval = setInterval(() => {
+    // Setup refresh interval for UI updates
+    refreshInterval = setInterval(() => {
       lastUpdated = new Date();
-    }, 30000);
+    }, 30000) as unknown as number;
     
+    // Initialize async - separate from onMount return
+    initializeScheduler();
+    
+    // Return the cleanup function (must be synchronous)
     return () => {
-      clearInterval(refreshInterval);
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
     };
   });
+  
+  // Async initialization function
+  async function initializeScheduler() {
+    try {
+      // Load config to get shops
+      config = await TauriApiService.invoke<AppConfig>('load_config_command');
+      
+      // Start the scheduler
+      await startScheduler();
+    } catch (err) {
+      console.error('Failed to initialize schedule panel:', err);
+      error = `Failed to initialize: ${err}`;
+    }
+  }
   
   // Stop the scheduler on component destroy
   onDestroy(() => {
     stopScheduler();
   });
+  
+  // Toggle shop selection for job
+  function toggleShopSelection(shopId: string) {
+    if (selectedShopIds.includes(shopId)) {
+      selectedShopIds = selectedShopIds.filter(id => id !== shopId);
+    } else {
+      selectedShopIds = [...selectedShopIds, shopId];
+    }
+  }
   
   // Add a new scheduled job
   async function handleAddJob() {
@@ -46,8 +77,9 @@
     
     try {
       error = null;
-      await addScheduledJob(newJobName, newJobTime);
+      await addScheduledJob(newJobName, newJobTime, selectedShopIds);
       newJobName = '';
+      selectedShopIds = [];
       isAddingJob = false;
     } catch (err) {
       console.error('Failed to add scheduled job:', err);
@@ -68,6 +100,10 @@
   
   // Delete a scheduled job
   async function deleteJob(id: string) {
+    if (!confirm('Sind Sie sicher, dass Sie diesen geplanten Job löschen möchten?')) {
+      return;
+    }
+    
     try {
       scheduleStore.removeJob(id);
       await scheduleStore.saveJobs();
@@ -134,6 +170,24 @@
                   Letzte Ausführung: {new Date(job.lastRun).toLocaleString('de-DE')}
                 </div>
               {/if}
+              
+              <!-- Shop selection display -->
+              {#if job.shopIds && job.shopIds.length > 0 && config?.shops}
+                <div class="job-shops">
+                  <span>Shops: </span>
+                  <div class="shop-tags">
+                    {#each job.shopIds as shopId}
+                      {#if config.shops.find(s => s.id === shopId)}
+                        <span class="shop-tag">{config.shops.find(s => s.id === shopId)?.name}</span>
+                      {/if}
+                    {/each}
+                  </div>
+                </div>
+              {:else if config?.shops}
+                <div class="job-shops">
+                  <span>Shops: Alle</span>
+                </div>
+              {/if}
             </div>
           </div>
         {/each}
@@ -163,6 +217,28 @@
                 bind:value={newJobTime}
               />
             </div>
+            
+            <!-- Shop selection -->
+            {#if config?.shops}
+              <div class="form-group">
+                <label>Shops für diese Synchronisierung</label>
+                <div class="shop-selection">
+                  {#each config.shops as shop}
+                    <div class="shop-selection-item">
+                      <input 
+                        type="checkbox" 
+                        id="shop-{shop.id}" 
+                        checked={selectedShopIds.includes(shop.id)}
+                        on:change={() => toggleShopSelection(shop.id)}
+                      />
+                      <label for="shop-{shop.id}">{shop.name}</label>
+                    </div>
+                  {/each}
+                </div>
+                <small>Keine Auswahl bedeutet: Alle Shops synchronisieren</small>
+              </div>
+            {/if}
+            
             <div class="form-actions">
               <button class="cancel-btn" on:click={() => isAddingJob = false}>Abbrechen</button>
               <button class="save-btn" on:click={handleAddJob}>Speichern</button>
@@ -288,10 +364,52 @@
     color: var(--red);
   }
   
-  .job-time, .job-next-run, .job-last-run {
+  .job-time, .job-next-run, .job-last-run, .job-shops {
     font-size: 0.8rem;
     color: var(--subtext0);
     margin-bottom: 0.25rem;
+  }
+  
+  .job-shops {
+    margin-top: 0.5rem;
+  }
+  
+  .shop-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  
+  .shop-tag {
+    background-color: var(--surface1);
+    color: var(--text);
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.2rem;
+  }
+  
+  .shop-selection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    max-height: 120px;
+    overflow-y: auto;
+    background-color: var(--surface1);
+    padding: 0.5rem;
+    border-radius: 0.3rem;
+  }
+  
+  .shop-selection-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .shop-selection-item label {
+    font-size: 0.8rem;
+    cursor: pointer;
   }
   
   .hidden {
@@ -403,6 +521,13 @@
   .form-group input:focus {
     outline: none;
     border-color: var(--blue);
+  }
+  
+  .form-group small {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--subtext0);
+    margin-top: 0.25rem;
   }
   
   .form-actions {

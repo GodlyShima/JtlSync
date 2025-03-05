@@ -36,7 +36,7 @@ pub struct TablesConfig {
     pub customers: String,
 }
 
-// Statistik-Struktur für das Dashboard
+// Statistik-Struktur für das Dashboard - updated with sync_hours
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SyncStats {
     pub shop_id: String,  // Added shop_id to identify which shop these stats belong to
@@ -47,6 +47,7 @@ pub struct SyncStats {
     pub last_sync_time: Option<DateTime<Utc>>,
     pub next_scheduled_run: Option<DateTime<Utc>>,
     pub aborted: bool,
+    pub sync_hours: i32,  // Added field for configurable timeframe
 }
 
 impl Default for SyncStats {
@@ -60,6 +61,7 @@ impl Default for SyncStats {
             last_sync_time: None,
             next_scheduled_run: None,
             aborted: false,
+            sync_hours: 24, // Default to 24 hours
         }
     }
 }

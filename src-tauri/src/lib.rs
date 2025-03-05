@@ -20,7 +20,7 @@ use commands::{
     abort_sync_command, cancel_scheduled_sync, get_sync_stats, get_synced_orders, 
     get_system_info, load_config_command, save_config_command, schedule_sync, 
     start_sync_command, start_scheduled_sync, add_shop_command, update_shop_command,
-    remove_shop_command, set_current_shop_command
+    remove_shop_command, set_current_shop_command, start_multi_sync_command, set_sync_hours
 };
 use notifications::{setup_notification_handler, show_notification_command};
 use tauri::Emitter;
@@ -38,13 +38,15 @@ fn main() {
             save_config_command,
             load_config_command,
             start_sync_command,
+            start_multi_sync_command,  // New multi-shop sync command
             get_sync_stats,
+            set_sync_hours,            // New set timeframe command
             schedule_sync,
             cancel_scheduled_sync,
             abort_sync_command,
             start_scheduled_sync,
             show_notification_command,
-            // New multi-shop commands
+            // Shop management commands
             add_shop_command,
             update_shop_command,
             remove_shop_command,

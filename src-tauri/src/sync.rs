@@ -1,9 +1,9 @@
-use chrono::Utc;
+use chrono::{Utc, Duration};
 use log::{info, error, warn};
 use mysql::prelude::ToValue;
 use tauri::Emitter;
 use tokio::time::sleep;
-use tokio::time::Duration;
+use tokio::time::Duration as TokioDuration;
 use std::sync::Mutex;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 use crate::api::JtlApiClient;
 use crate::commands::add_synced_order;
 use crate::commands::should_abort;
-use crate::database::{connect_to_joomla, get_new_orders, get_order_items, get_shipping_address};
+use crate::database::{connect_to_joomla, get_orders_within_timeframe, get_order_items, get_shipping_address};
 use crate::models::LogEntry;
 use crate::utils::emit_event;
 use crate::models::{AppConfig, ShopConfig, SyncStats, VirtueMartOrder, JtlCustomer, JtlOrder, JtlOrderItem, JtlCountry, JtlPaymentDetails, JtlShippingDetails};
@@ -31,6 +31,7 @@ lazy_static! {
         last_sync_time: None,
         next_scheduled_run: None,
         aborted: false,
+        sync_hours: 24, // Default to 24 hours
     };
 }
 
@@ -67,17 +68,141 @@ pub fn get_current_stats() -> SyncStats {
     DEFAULT_STATS.clone()
 }
 
+/// Update sync time range for a shop
+pub fn update_shop_sync_hours(shop_id: &str, hours: i32) -> Result<(), String> {
+    let mut stats = SYNC_STATS.lock().unwrap();
+    
+    // If stats for this shop already exist, update them
+    if let Some(shop_stats) = stats.get_mut(shop_id) {
+        shop_stats.sync_hours = hours;
+        return Ok(());
+    }
+    
+    // Create new stats for this shop
+    let mut new_stats = DEFAULT_STATS.clone();
+    new_stats.shop_id = shop_id.to_string();
+    new_stats.sync_hours = hours;
+    stats.insert(shop_id.to_string(), new_stats);
+    
+    Ok(())
+}
+
+/// Synchronize multiple shops sequentially
+pub async fn sync_multiple_shops<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    config: &AppConfig,
+    shop_ids: Vec<String>
+) -> Result<(), String> {
+    info!("Starting sequential synchronization for {} shops", shop_ids.len());
+
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: format!("Starting sequential synchronization for {} shops", shop_ids.len()),
+        level: "info".to_string(),
+        category: "sync".to_string(),
+        shop_id: None,
+    });
+
+    // Sync each shop in sequence
+    for shop_id in shop_ids {
+        // Find the shop config
+        let shop = match config.shops.iter().find(|s| s.id == shop_id) {
+            Some(s) => s.clone(),
+            None => {
+                let error_msg = format!("Shop with ID '{}' not found", shop_id);
+                let _ = app_handle.emit("log", LogEntry {
+                    timestamp: Utc::now(),
+                    message: error_msg.clone(),
+                    level: "error".to_string(),
+                    category: "sync".to_string(),
+                    shop_id: Some(shop_id.clone()),
+                });
+                continue; // Skip this shop and move to the next one
+            }
+        };
+        
+        // Get the sync hours for this shop (default to 24 if not set)
+        let sync_hours = get_shop_stats(&shop_id).sync_hours;
+        
+        let _ = app_handle.emit("log", LogEntry {
+            timestamp: Utc::now(),
+            message: format!("Starting synchronization for shop '{}' with {}h timeframe", shop.name, sync_hours),
+            level: "info".to_string(),
+            category: "sync".to_string(),
+            shop_id: Some(shop_id.clone()),
+        });
+        
+        // Perform sync for this shop
+        match perform_sync(app_handle, config, &shop, sync_hours).await {
+            Ok(stats) => {
+                update_sync_stats(stats.clone());
+                
+                // Send events for completion
+                let _ = app_handle.emit("sync-complete", stats.clone());
+                
+                let _ = app_handle.emit("log", LogEntry {
+                    timestamp: Utc::now(),
+                    message: format!("Synchronization completed for shop '{}': {} synced, {} skipped, {} errors", 
+                                   shop.name, stats.synced_orders, stats.skipped_orders, stats.error_orders),
+                    level: "info".to_string(),
+                    category: "sync".to_string(),
+                    shop_id: Some(shop.id),
+                });
+            },
+            Err(e) => {
+                // Log error but continue with next shop
+                let _ = app_handle.emit("sync-error", (e.clone(), shop.id.clone()));
+                let _ = app_handle.emit("log", LogEntry {
+                    timestamp: Utc::now(),
+                    message: format!("Synchronization failed for shop '{}': {}", shop.name, e),
+                    level: "error".to_string(),
+                    category: "sync".to_string(),
+                    shop_id: Some(shop.id),
+                });
+            }
+        }
+        
+        // Brief pause between shop syncs
+        sleep(TokioDuration::from_millis(500)).await;
+        
+        // Check for abort between shop syncs
+        if should_abort() {
+            let _ = app_handle.emit("log", LogEntry {
+                timestamp: Utc::now(),
+                message: "Multi-shop synchronization aborted by user".to_string(),
+                level: "warn".to_string(),
+                category: "sync".to_string(),
+                shop_id: None,
+            });
+            
+            return Ok(()); // Exit early but return Ok since this is an intentional abort
+        }
+    }
+    
+    // All shops synced
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: "Sequential synchronization of all selected shops completed".to_string(),
+        level: "info".to_string(),
+        category: "sync".to_string(),
+        shop_id: None,
+    });
+    
+    Ok(())
+}
+
 /// Hauptfunktion für die Synchronisierung eines bestimmten Shops
 pub async fn perform_sync<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     config: &AppConfig,
-    shop: &ShopConfig
+    shop: &ShopConfig,
+    hours: i32
 ) -> Result<SyncStats, String> {
-    info!("Starte Synchronisation Joomla -> JTL für Shop '{}'", shop.name);
+    info!("Starting synchronization Joomla -> JTL for shop '{}' with {}h timeframe", shop.name, hours);
 
     let _ = app_handle.emit("log", LogEntry {
         timestamp: Utc::now(),
-        message: format!("Starting synchronization process for shop '{}'...", shop.name),
+        message: format!("Starting synchronization process for shop '{}' with {}h timeframe...", shop.name, hours),
         level: "info".to_string(),
         category: "sync".to_string(),
         shop_id: Some(shop.id.clone()),
@@ -105,22 +230,22 @@ pub async fn perform_sync<R: tauri::Runtime>(
         })?;
 
     // JTL-API-Client initialisieren
-    info!("Initialisiere JTL API Client für Shop '{}'...", shop.name);
+    info!("Initializing JTL API Client for shop '{}'...", shop.name);
     let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e";
     let client = JtlApiClient::new(api_key);
     
-    // Neue Bestellungen abrufen
-    info!("Rufe neue Bestellungen aus Joomla für Shop '{}' ab...", shop.name);
+    // Neue Bestellungen im konfigurierten Zeitraum abrufen
+    info!("Fetching orders from past {} hours for shop '{}'...", hours, shop.name);
 
     let _ = app_handle.emit("log", LogEntry {
         timestamp: Utc::now(),
-        message: format!("Fetching new orders from last 24 hours for shop '{}'...", shop.name),
+        message: format!("Fetching orders from past {} hours for shop '{}'...", hours, shop.name),
         level: "info".to_string(),
         category: "sync".to_string(),
         shop_id: Some(shop.id.clone()),
     });
 
-    let orders = get_new_orders(&joomla_conn, shop)?;
+    let orders = get_orders_within_timeframe(&joomla_conn, shop, hours)?;
 
     let _ = app_handle.emit("log", LogEntry {
         timestamp: Utc::now(),
@@ -142,6 +267,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
         last_sync_time: Some(Utc::now()),
         next_scheduled_run: None,
         aborted: false,
+        sync_hours: hours,
     };
     
     update_sync_stats(stats.clone());
@@ -151,14 +277,14 @@ pub async fn perform_sync<R: tauri::Runtime>(
     info!("Starting sync for shop '{}' with {} orders", shop.name, total_orders);
     
     if orders.is_empty() {
-        info!("Keine neuen Bestellungen in den letzten 24 Stunden für Shop '{}'", shop.name);
+        info!("No new orders in the past {} hours for shop '{}'", hours, shop.name);
         return Ok(stats);
     }
     
     // Jede Bestellung verarbeiten
     for order in orders {
         if should_abort() {
-            info!("Synchronisierung abgebrochen, stoppe nach aktueller Bestellung für Shop '{}'", shop.name);
+            info!("Synchronization aborted, stopping after current order for shop '{}'", shop.name);
             
             let _ = app_handle.emit("log", LogEntry {
                 timestamp: Utc::now(),
@@ -178,7 +304,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
             break;
         }
 
-        info!("Verarbeite Bestellung: ID={}, Shop={}, Kunde={} {}", 
+        info!("Processing order: ID={}, Shop={}, Customer={} {}", 
               order.virtuemart_order_id,
               shop.name,
               order.first_name.as_deref().unwrap_or(""), 
@@ -210,7 +336,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
                         shop_id: Some(shop.id.clone()),
                     });
 
-                    info!("Bestellung {} erfolgreich synchronisiert für Shop '{}'", order.order_number, shop.name);
+                    info!("Order {} successfully synchronized for shop '{}'", order.order_number, shop.name);
                 } else {
                     stats.skipped_orders += 1;
 
@@ -222,7 +348,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
                         shop_id: Some(shop.id.clone()),
                     });
 
-                    info!("Bestellung {} übersprungen (existiert bereits) für Shop '{}'", order.order_number, shop.name);
+                    info!("Order {} skipped (already exists) for shop '{}'", order.order_number, shop.name);
                 }
             },
             Err(e) => {
@@ -236,7 +362,7 @@ pub async fn perform_sync<R: tauri::Runtime>(
                     shop_id: Some(shop.id.clone()),
                 });
 
-                error!("Fehler bei Bestellung {} für Shop '{}': {}", order.virtuemart_order_id, shop.name, e);
+                error!("Error with order {} for shop '{}': {}", order.virtuemart_order_id, shop.name, e);
             }
         }
 
@@ -253,14 +379,14 @@ pub async fn perform_sync<R: tauri::Runtime>(
             stats.error_orders
         );
 
-        info!("Füge Bestellung {} zu SYNCED_ORDERS für Shop '{}' hinzu", order.order_number, shop.name);
+        info!("Adding order {} to SYNCED_ORDERS for shop '{}'", order.order_number, shop.name);
         add_synced_order(app_handle, &shop.id, order.clone());
 
-        sleep(Duration::from_millis(150)).await;
+        sleep(TokioDuration::from_millis(150)).await;
     }
     
     // Zusammenfassung
-    info!("Synchronisation abgeschlossen für Shop '{}': {} übertragen, {} übersprungen, {} Fehler", 
+    info!("Synchronization completed for shop '{}': {} transferred, {} skipped, {} errors", 
           shop.name, stats.synced_orders, stats.skipped_orders, stats.error_orders);
     
     update_sync_stats(stats.clone());

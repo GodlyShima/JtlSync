@@ -6,6 +6,16 @@ export interface DatabaseConfig {
   database: string;
 }
 
+export interface ScheduledJob {
+  id: string;
+  name: string;
+  cronExpression: string;
+  lastRun: string | null;
+  nextRun: string | null;
+  enabled: boolean;
+  shopIds: string[]; // Array of shop IDs to synchronize
+}
+
 // Tables configuration interface
 export interface TablesConfig {
   orders: string;
