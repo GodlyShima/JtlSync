@@ -1,5 +1,3 @@
-mod shop;
-
 use std::fs;
 use std::path::PathBuf;
 use crate::models::{AppConfig, ShopConfig, DatabaseConfig, TablesConfig};

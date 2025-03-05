@@ -3,61 +3,75 @@
     windows_subsystem = "windows"
 )]
 
-mod models;
-mod config;
-mod database;
-mod api;
-mod sync;
-mod utils;
-mod commands;
-mod notifications;
-
 use chrono::Utc;
-use env_logger::Env;
-
-use models::LogEntry;
-use commands::{
-    abort_sync_command, cancel_scheduled_sync, get_sync_stats, get_synced_orders, 
-    get_system_info, load_config_command, save_config_command, schedule_sync, 
-    start_sync_command, start_scheduled_sync, add_shop_command, update_shop_command,
-    remove_shop_command, set_current_shop_command, start_multi_sync_command, set_sync_hours
-};
-use notifications::{setup_notification_handler, show_notification_command};
 use tauri::Emitter;
 
+// Import modules
+use jtl_sync::{
+    // Commands
+    commands::{
+        // Config commands
+        load_config_command, save_config_command, add_shop_command, 
+        update_shop_command, remove_shop_command, set_current_shop_command,
+        
+        // Sync commands
+        start_sync_command, abort_sync_command, get_sync_stats, 
+        get_synced_orders, start_multi_sync_command, set_sync_hours,
+        schedule_sync, cancel_scheduled_sync, start_scheduled_sync,
+        
+        // System commands
+        get_system_info,
+    },
+    
+    // Notifications
+    notifications::{setup_notification_handler, show_notification_command},
+    
+    // Models
+    models::LogEntry,
+    
+    // Initialization
+    init,
+};
+
 fn main() {
-    // Logger für Konsolenausgabe einrichten
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .format_timestamp_secs()
-        .init();
+    // Initialize the application
+    if let Err(e) = init() {
+        eprintln!("Error initializing application: {}", e);
+        std::process::exit(1);
+    }
     
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            get_system_info,
-            get_synced_orders,
-            save_config_command,
+            // Config commands
             load_config_command,
-            start_sync_command,
-            start_multi_sync_command,  // New multi-shop sync command
-            get_sync_stats,
-            set_sync_hours,            // New set timeframe command
-            schedule_sync,
-            cancel_scheduled_sync,
-            abort_sync_command,
-            start_scheduled_sync,
-            show_notification_command,
-            // Shop management commands
+            save_config_command,
             add_shop_command,
             update_shop_command,
             remove_shop_command,
             set_current_shop_command,
+            
+            // Sync commands
+            start_sync_command,
+            start_multi_sync_command,
+            get_sync_stats,
+            set_sync_hours,
+            schedule_sync,
+            cancel_scheduled_sync,
+            abort_sync_command,
+            start_scheduled_sync,
+            get_synced_orders,
+            
+            // System commands
+            get_system_info,
+            
+            // Notification commands
+            show_notification_command,
         ])
         .setup(|app| {
-            // First, set up the notification handler with the app
-            // This consumes the mutable borrow of app
+            // Set up the notification handler
             setup_notification_handler(app)?;
             
-            // Now that we're done with the mutable borrow, we can create an immutable borrow
+            // Get app handle for logging
             let app_handle = app.handle();
             
             // Log application start

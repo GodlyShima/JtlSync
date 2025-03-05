@@ -1,5 +1,3 @@
-pub mod config;
-
 use tauri::{AppHandle, Runtime, Emitter};
 use chrono::Utc;
 use std::time::SystemTime;
