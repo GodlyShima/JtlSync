@@ -9,47 +9,41 @@ use crate::error::{Result, Error};
 
 /// Save configuration
 #[tauri::command]
-pub async fn save_config_command<R: Runtime>(app_handle: AppHandle<R>, config: AppConfig) -> Result<(), String> {
-    match save_config(&config) {
-        Ok(_) => {
-            // Send log event
-            let _ = app_handle.emit("log", LogEntry {
-                timestamp: Utc::now(),
-                message: "Configuration saved successfully".to_string(),
-                level: "info".to_string(),
-                category: "system".to_string(),
-                shop_id: None,
-            });
-            
-            Ok(())
-        },
-        Err(e) => Err(e.to_string())
-    }
+pub async fn save_config_command<R: Runtime>(app_handle: AppHandle<R>, config: AppConfig) -> Result<()> {
+    save_config(&config)?;
+    
+    // Send log event
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: "Configuration saved successfully".to_string(),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: None,
+    });
+    
+    Ok(())
 }
 
 /// Load configuration
 #[tauri::command]
-pub async fn load_config_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<AppConfig, String> {
-    match load_config() {
-        Ok(config) => {
-            // Send log event
-            let _ = app_handle.emit("log", LogEntry {
-                timestamp: Utc::now(),
-                message: "Configuration loaded successfully".to_string(),
-                level: "info".to_string(),
-                category: "system".to_string(),
-                shop_id: None,
-            });
-            
-            Ok(config)
-        },
-        Err(e) => Err(e.to_string())
-    }
+pub async fn load_config_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<AppConfig> {
+    let config = load_config()?;
+    
+    // Send log event
+    let _ = app_handle.emit("log", LogEntry {
+        timestamp: Utc::now(),
+        message: "Configuration loaded successfully".to_string(),
+        level: "info".to_string(),
+        category: "system".to_string(),
+        shop_id: None,
+    });
+    
+    Ok(config)
 }
 
 /// Add shop
 #[tauri::command]
-pub async fn add_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig, String> {
+pub async fn add_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig> {
     let mut config = load_config()?;
     
     add_shop(&mut config, shop.clone())?;
@@ -68,7 +62,7 @@ pub async fn add_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopCo
 
 /// Update shop
 #[tauri::command]
-pub async fn update_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig, String> {
+pub async fn update_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: ShopConfig) -> Result<AppConfig> {
     let mut config = load_config()?;
     
     update_shop(&mut config, shop.clone())?;
@@ -87,7 +81,7 @@ pub async fn update_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop: Sho
 
 /// Remove shop
 #[tauri::command]
-pub async fn remove_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig, String> {
+pub async fn remove_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig> {
     let mut config = load_config()?;
     
     // Find shop name for logging before removing
@@ -112,7 +106,7 @@ pub async fn remove_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: 
 
 /// Set current shop
 #[tauri::command]
-pub async fn set_current_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig, String> {
+pub async fn set_current_shop_command<R: Runtime>(app_handle: AppHandle<R>, shop_id: String) -> Result<AppConfig> {
     let mut config = load_config()?;
     
     set_current_shop(&mut config, &shop_id)?;

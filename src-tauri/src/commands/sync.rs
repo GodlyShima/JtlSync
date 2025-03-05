@@ -1,6 +1,6 @@
 use chrono::Utc;
-use log::info;
-use tauri::{AppHandle, Runtime};
+use log::{info, error};
+use tauri::{AppHandle, Emitter, Runtime};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
@@ -19,7 +19,7 @@ lazy_static! {
 
 /// Command to abort the current synchronization
 #[tauri::command]
-pub async fn abort_sync_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<(), String> {
+pub async fn abort_sync_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<()> {
     info!("Aborting synchronization...");
     
     // Set abort flag
@@ -43,12 +43,12 @@ pub async fn start_scheduled_sync<R: Runtime>(
     app_handle: AppHandle<R>,
     shop_ids: Vec<String>,
     job_id: String
-) -> Result<(), String> {
+) -> Result<()> {
     // Load config
     let config = load_config()?;
     
     if shop_ids.is_empty() {
-        return Err("No shops selected for synchronization".to_string());
+        return Err(Error::ValidationError("No shops selected for synchronization".to_string()));
     }
     
     // Log start of scheduled sync
@@ -70,8 +70,8 @@ pub async fn start_scheduled_sync<R: Runtime>(
     
     tauri::async_runtime::spawn(async move {
         // Create sync engine
-        let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e"; // Should come from config
-        let mut engine = SyncEngine::new(api_key);
+        let api_key = config_clone.get_api_key(); 
+        let mut engine = SyncEngine::new(&api_key);
         
         match engine.sync_multiple_shops(&app_handle_clone, &config_clone, shop_ids_clone).await {
             Ok(_) => {
@@ -153,10 +153,10 @@ pub fn add_synced_order<R: Runtime>(app_handle: &AppHandle<R>, shop_id: &str, or
 pub async fn get_synced_orders<R: Runtime>(
     app_handle: AppHandle<R>,
     shop_id: Option<String>
-) -> Result<Vec<VirtueMartOrder>, String> {
+) -> Result<Vec<VirtueMartOrder>> {
     info!("Getting synced orders for shop: {:?}", shop_id);
     
-    let stored_orders = SYNCED_ORDERS.lock().unwrap();
+    let stored_orders = SYNCED_ORDERS.lock().map_err(|e| Error::System(e.to_string()))?;
     
     // If shop_id is provided, return orders for that shop only
     if let Some(id) = shop_id {
@@ -164,7 +164,7 @@ pub async fn get_synced_orders<R: Runtime>(
         
         // Emit the orders to the frontend
         app_handle.emit("synced-orders", (id.clone(), orders.clone()))
-            .map_err(|e| format!("Failed to emit synced orders: {}", e))?;
+            .map_err(|e| Error::System(format!("Failed to emit synced orders: {}", e)))?;
         
         Ok(orders)
     } else {
@@ -175,7 +175,7 @@ pub async fn get_synced_orders<R: Runtime>(
         
         // Emit all orders to the frontend
         app_handle.emit("synced-orders-all", all_orders.clone())
-            .map_err(|e| format!("Failed to emit all synced orders: {}", e))?;
+            .map_err(|e| Error::System(format!("Failed to emit all synced orders: {}", e)))?;
         
         Ok(all_orders)
     }
@@ -186,9 +186,9 @@ pub async fn get_synced_orders<R: Runtime>(
 pub async fn start_multi_sync_command<R: Runtime>(
     app_handle: AppHandle<R>, 
     shop_ids: Vec<String>
-) -> Result<(), String> {
+) -> Result<()> {
     if shop_ids.is_empty() {
-        return Err("No shops selected for synchronization".to_string());
+        return Err(Error::ValidationError("No shops selected for synchronization".to_string()));
     }
     
     // Load the configuration
@@ -214,8 +214,8 @@ pub async fn start_multi_sync_command<R: Runtime>(
     // Start background task
     tauri::async_runtime::spawn(async move {
         // Create sync engine
-        let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e"; // Should come from config
-        let mut engine = SyncEngine::new(api_key);
+        let api_key = config_clone.get_api_key();
+        let mut engine = SyncEngine::new(&api_key);
         
         match engine.sync_multiple_shops(&app_handle_clone, &config_clone, shop_ids_clone).await {
             Ok(_) => {
@@ -255,7 +255,7 @@ pub async fn start_sync_command<R: Runtime>(
     app_handle: AppHandle<R>, 
     shop_id: Option<String>,
     hours: Option<i32>
-) -> Result<(), String> {
+) -> Result<()> {
     // Load the configuration
     let config = load_config()?;
     
@@ -264,7 +264,7 @@ pub async fn start_sync_command<R: Runtime>(
         // Find the specific shop
         config.shops.iter()
             .find(|s| s.id == id)
-            .ok_or_else(|| format!("Shop with ID '{}' not found", id))?
+            .ok_or_else(|| Error::NotFound(format!("Shop with ID '{}' not found", id)))?
             .clone()
     } else {
         // Use the current shop
@@ -298,8 +298,8 @@ pub async fn start_sync_command<R: Runtime>(
     // Start background task
     tauri::async_runtime::spawn(async move {
         // Create sync engine
-        let api_key = "4fef6933-ae20-4cbc-bd97-a5cd584f244e"; // Should come from config
-        let mut engine = SyncEngine::new(api_key);
+        let api_key = config.get_api_key();
+        let mut engine = SyncEngine::new(&api_key);
         
         match engine.sync_shop(&app_handle_clone, &shop_clone, sync_hours).await {
             Ok(stats) => {
@@ -341,10 +341,10 @@ pub async fn set_sync_hours<R: Runtime>(
     app_handle: AppHandle<R>,
     shop_id: String,
     hours: i32
-) -> Result<SyncStats, String> {
+) -> Result<SyncStats> {
     // Validate the hours parameter
     if hours <= 0 {
-        return Err("Sync timeframe must be greater than zero hours".to_string());
+        return Err(Error::ValidationError("Sync timeframe must be greater than zero hours".to_string()));
     }
     
     // Update the shop's sync hours
@@ -367,7 +367,7 @@ pub async fn set_sync_hours<R: Runtime>(
 
 /// Get current synchronization statistics
 #[tauri::command]
-pub async fn get_sync_stats(shop_id: Option<String>) -> Result<SyncStats, String> {
+pub async fn get_sync_stats(shop_id: Option<String>) -> Result<SyncStats> {
     if let Some(id) = shop_id {
         Ok(get_shop_stats(&id))
     } else {
@@ -377,16 +377,28 @@ pub async fn get_sync_stats(shop_id: Option<String>) -> Result<SyncStats, String
 
 /// Schedule synchronization
 #[tauri::command]
-pub async fn schedule_sync(shop_ids: Vec<String>, cron_expression: String) -> Result<(), String> {
-    // In a real implementation, set up a cron job or timer
-    // For now, just log it
-    info!("Scheduled sync for {} shops with cron: {}", shop_ids.len(), cron_expression);
+pub async fn schedule_sync(shop_ids: Vec<String>, cron_expression: String) -> Result<()> {
+    // Validate inputs
+    if shop_ids.is_empty() {
+        return Err(Error::ValidationError("No shops selected for scheduling".to_string()));
+    }
+    
+    if cron_expression.is_empty() {
+        return Err(Error::ValidationError("Invalid cron expression".to_string()));
+    }
+    
+    // In a real implementation, this would:
+    // 1. Validate the cron expression
+    // 2. Set up a persistent scheduler
+    // 3. Store the schedule in configuration
+    info!("Scheduling sync for {} shops with cron: {}", shop_ids.len(), cron_expression);
+    
     Ok(())
 }
 
 /// Cancel scheduled synchronization jobs
 #[tauri::command]
-pub async fn cancel_scheduled_sync(shop_id: Option<String>) -> Result<(), String> {
+pub async fn cancel_scheduled_sync(shop_id: Option<String>) -> Result<()> {
     // In a real implementation, cancel scheduled jobs
     if let Some(id) = shop_id {
         info!("Canceled scheduled sync jobs for shop {}", id);

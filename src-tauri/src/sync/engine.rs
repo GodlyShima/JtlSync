@@ -1,9 +1,10 @@
 use chrono::Utc;
 use log::{info, error, warn};
 use std::sync::Arc;
-use tauri::{AppHandle, Runtime, Manager};
 use tokio::time::sleep;
 use tokio::time::Duration as TokioDuration;
+use tauri::{AppHandle, Runtime, Emitter, Manager};
+
 
 use crate::api::jtl::JtlApiClient;
 use crate::config::app::AppConfig;

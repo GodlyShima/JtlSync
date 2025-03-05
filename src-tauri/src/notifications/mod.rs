@@ -16,14 +16,13 @@ pub struct NotificationPayload {
 
 /// Tauri command to show a notification
 #[tauri::command]
-pub fn show_notification_command(notification: NotificationPayload) -> Result<(), String> {
+pub fn show_notification_command(notification: NotificationPayload) -> Result<()> {
     info!("Notification command received: {} - {}", notification.title, notification.body);
     show_notification(&notification.title, &notification.body)
-        .map_err(|e| e.to_string())
 }
 
 /// Setup notification handler for the app
-pub fn setup_notification_handler(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+pub fn setup_notification_handler(app: &mut tauri::App) -> Result<()> {
     // Get the app handle and use that instead of the mutable app reference
     let app_handle = app.handle();
     

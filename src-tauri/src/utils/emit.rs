@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::{AppHandle, Runtime, Manager, Window};
+use tauri::{AppHandle, Runtime, Manager, Window, Emitter};
 
 /// Helper function to emit events to windows
 pub fn emit_to_window<R: Runtime, T: Serialize + Clone>(
@@ -18,7 +18,8 @@ pub fn emit_to_all<R: Runtime, T: Serialize + Clone>(
     event: &str, 
     payload: T
 ) -> Result<(), String> {
+    // replace emit_all with emit
     app_handle
-        .emit_all(event, payload)
+        .emit(event, payload)
         .map_err(|e| format!("Failed to emit event: {}", e))
 }

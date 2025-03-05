@@ -4,10 +4,11 @@
 )]
 
 use chrono::Utc;
-use tauri::Emitter;
+use tauri::Manager;
+use std::error::Error;
 
 // Import modules
-use jtl_sync::{
+use jtlsync_lib::{
     // Commands
     commands::{
         // Config commands
@@ -33,13 +34,14 @@ use jtl_sync::{
     init,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     // Initialize the application
     init()?;
     
     println!("JTL-VirtueMart Sync starting...");
     
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             // Config commands
             load_config_command,
@@ -71,10 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             setup_notification_handler(app)?;
             
             // Get app handle for logging
-            let app_handle = app.handle();
+            let app_handle = app.app_handle();
             
             // Log application start
-            let _ = app_handle.emit("log", LogEntry {
+            let _ = app_handle.emit_all("log", LogEntry {
                 timestamp: Utc::now(),
                 message: "Application started".to_string(),
                 level: "info".to_string(),
@@ -84,7 +86,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             Ok(())
         })
-    .run(tauri::generate_context!())?;
+        .run(tauri::generate_context!())
+        .expect("Error while running application");
     
     Ok(())
 }
