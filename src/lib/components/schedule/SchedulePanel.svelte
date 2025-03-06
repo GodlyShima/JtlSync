@@ -1,6 +1,14 @@
 <!-- src/lib/components/schedule/SchedulePanel.svelte -->
 <script lang="ts">
-  import { addScheduledJob, getNextRunText, scheduleStore, startScheduler, stopScheduler } from '$lib/services/SchedulerService';
+  import {
+    addScheduledJob,
+    getNextRunText,
+    getScheduleDescription,
+    scheduleStore,
+    ScheduleType,
+    startScheduler,
+    stopScheduler
+  } from '$lib/services/SchedulerService';
   import { TauriApiService } from "$lib/services/TauriApiService";
   import type { AppConfig } from "$lib/types";
   import { faCalendarAlt, faPause, faPlay, faSync, faTimes, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -9,11 +17,15 @@
   import PanelHeader from '../stats/PanelHeader.svelte';
   
   let newJobName = '';
-  let newJobTime = '01:00'; // Default to 1:00 AM
   let isAddingJob = false;
   let error: string | null = null;
   let config: AppConfig;
   let selectedShopIds: string[] = [];
+  
+  // Schedule settings
+  let selectedScheduleType: ScheduleType = ScheduleType.DAILY;
+  let dailyTime = '01:00'; // Default to 1:00 AM for daily schedule
+  let minutesInterval = 30; // Default to 30 minutes for minutes-based schedule
   
   // For manual refresh functionality
   let lastUpdated = new Date();
@@ -77,7 +89,29 @@
     
     try {
       error = null;
-      await addScheduledJob(newJobName, newJobTime, selectedShopIds);
+      
+      switch (selectedScheduleType) {
+        case ScheduleType.DAILY:
+          await addScheduledJob(newJobName, ScheduleType.DAILY, dailyTime, undefined, selectedShopIds);
+          break;
+          
+        case ScheduleType.HOURLY:
+          await addScheduledJob(newJobName, ScheduleType.HOURLY, "", undefined, selectedShopIds);
+          break;
+          
+        case ScheduleType.MINUTES:
+          if (minutesInterval < 1) {
+            error = 'Das Intervall muss mindestens 1 Minute betragen';
+            return;
+          }
+          await addScheduledJob(newJobName, ScheduleType.MINUTES, "", minutesInterval, selectedShopIds);
+          break;
+          
+        default:
+          error = 'Ungültiger Zeitplantyp';
+          return;
+      }
+      
       newJobName = '';
       selectedShopIds = [];
       isAddingJob = false;
@@ -158,13 +192,17 @@
                   </button>
                 </div>
               </div>
-              <div class="job-time">Zeit: {job.cronExpression}</div>
+              
+              <!-- Schedule info based on type -->
+              <div class="job-time">{getScheduleDescription(job)}</div>
+              
               <!-- Using lastUpdated as a dependency to re-render countdown -->
               <div class="job-next-run">
                 Nächste Ausführung: {getNextRunText(job)} 
                 <!-- Adding lastUpdated dependency invisibly for reactivity -->
                 {#if lastUpdated}<span class="hidden">{lastUpdated.toISOString()}</span>{/if}
               </div>
+              
               {#if job.lastRun}
                 <div class="job-last-run">
                   Letzte Ausführung: {new Date(job.lastRun).toLocaleString('de-DE')}
@@ -172,11 +210,11 @@
               {/if}
               
               <!-- Shop selection display -->
-              {#if job.shopIds && job.shopIds.length > 0 && config?.shops}
+              {#if job.shop_ids && job.shop_ids.length > 0 && config?.shops}
                 <div class="job-shops">
                   <span>Shops: </span>
                   <div class="shop-tags">
-                    {#each job.shopIds as shopId}
+                    {#each job.shop_ids as shopId}
                       {#if config.shops.find(s => s.id === shopId)}
                         <span class="shop-tag">{config.shops.find(s => s.id === shopId)?.name}</span>
                       {/if}
@@ -200,6 +238,7 @@
                 <Fa icon={faTimes} />
               </button>
             </div>
+            
             <div class="form-group">
               <label for="job-name">Name</label>
               <input 
@@ -209,14 +248,71 @@
                 placeholder="z.B. Tägliche Synchronisierung"
               />
             </div>
+            
+            <!-- Schedule type selection -->
             <div class="form-group">
-              <label for="job-time">Uhrzeit</label>
-              <input 
-                type="time" 
-                id="job-time" 
-                bind:value={newJobTime}
-              />
+              <label>Zeitplan-Typ</label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input 
+                    type="radio" 
+                    name="schedule-type"
+                    bind:group={selectedScheduleType} 
+                    value={ScheduleType.DAILY}
+                  />
+                  Täglich
+                </label>
+                
+                <label class="radio-label">
+                  <input 
+                    type="radio" 
+                    name="schedule-type"
+                    bind:group={selectedScheduleType} 
+                    value={ScheduleType.HOURLY}
+                  />
+                  Stündlich
+                </label>
+                
+                <label class="radio-label">
+                  <input 
+                    type="radio" 
+                    name="schedule-type"
+                    bind:group={selectedScheduleType} 
+                    value={ScheduleType.MINUTES}
+                  />
+                  Minuten-Intervall
+                </label>
+              </div>
             </div>
+            
+            <!-- Fields specific to the selected schedule type -->
+            {#if selectedScheduleType === ScheduleType.DAILY}
+              <div class="form-group">
+                <label for="job-time">Uhrzeit</label>
+                <input 
+                  type="time" 
+                  id="job-time" 
+                  bind:value={dailyTime}
+                />
+              </div>
+            {:else if selectedScheduleType === ScheduleType.MINUTES}
+              <div class="form-group">
+                <label for="minutes-interval">Intervall (Minuten)</label>
+                <input 
+                  type="number" 
+                  id="minutes-interval" 
+                  bind:value={minutesInterval}
+                  min="1"
+                  max="1440"
+                  step="1"
+                />
+                <small>Synchronisation alle {minutesInterval} Minuten</small>
+              </div>
+            {:else if selectedScheduleType === ScheduleType.HOURLY}
+              <div class="form-info">
+                Die Synchronisation wird zu Beginn jeder Stunde ausgeführt.
+              </div>
+            {/if}
             
             <!-- Shop selection -->
             {#if config?.shops}

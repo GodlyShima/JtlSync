@@ -3,10 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { get, writable } from "svelte/store";
 
+// Define schedule types
+export enum ScheduleType {
+  DAILY = "daily", // Run once per day at specific time
+  HOURLY = "hourly", // Run every hour
+  MINUTES = "minutes", // Run every X minutes
+  CUSTOM = "custom", // Custom schedule
+}
+
 interface ScheduledJob {
   id: string;
   name: string;
-  cronExpression: string;
+  scheduleType: ScheduleType;
+  cronExpression: string; // For DAILY: "HH:MM", for HOURLY: empty, for MINUTES: number of minutes
+  interval?: number; // For MINUTES: interval in minutes
   lastRun: string | null;
   nextRun: string | null;
   enabled: boolean;
@@ -108,7 +118,7 @@ const createScheduleStore = () => {
         jobs: state.jobs.map((job) => {
           if (!job.enabled) return job;
 
-          const nextRun = getNextRunFromCron(job.cronExpression);
+          const nextRun = getNextRunTime(job);
           return {
             ...job,
             nextRun: nextRun ? nextRun.toISOString() : job.nextRun,
@@ -121,11 +131,42 @@ const createScheduleStore = () => {
 
 export const scheduleStore = createScheduleStore();
 
-// Parse cron expression to Date
-function getNextRunFromCron(cronExpression: string): Date | null {
-  // For simplicity, we'll just support a basic format: "hour:minute"
+// Calculate the next run time based on schedule type
+function getNextRunTime(job: ScheduledJob): Date | null {
+  const now = new Date();
+
+  switch (job.scheduleType) {
+    case ScheduleType.DAILY:
+      return getNextRunFromDailyTime(job.cronExpression);
+
+    case ScheduleType.HOURLY:
+      // Run at the beginning of the next hour
+      const nextHour = new Date(now);
+      nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+      return nextHour;
+
+    case ScheduleType.MINUTES:
+      // Run after the specified interval in minutes
+      if (!job.interval || job.interval <= 0) return null;
+
+      const nextInterval = new Date(now);
+      nextInterval.setMinutes(nextInterval.getMinutes() + job.interval);
+      return nextInterval;
+
+    case ScheduleType.CUSTOM:
+      // For custom schedule, we still support the old format
+      return getNextRunFromDailyTime(job.cronExpression);
+
+    default:
+      return null;
+  }
+}
+
+// Parse daily time format (HH:MM) to Date
+function getNextRunFromDailyTime(timeString: string): Date | null {
+  // For simple format: "hour:minute"
   try {
-    const [hour, minute] = cronExpression.split(":").map(Number);
+    const [hour, minute] = timeString.split(":").map(Number);
 
     if (
       isNaN(hour) ||
@@ -149,7 +190,7 @@ function getNextRunFromCron(cronExpression: string): Date | null {
 
     return next;
   } catch (err) {
-    console.error("Invalid cron expression:", err);
+    console.error("Invalid time format:", err);
     return null;
   }
 }
@@ -187,8 +228,8 @@ async function startScheduledSync(
   return invoke("start_scheduled_sync", {
     shop_ids: shopIds,
     job_id: jobId,
-    shopIds: shopIds, // Für Kompatibilität
-    jobId: jobId, // Diese Zeile hinzufügen
+    shopIds: shopIds, // For compatibility
+    jobId: jobId,
   });
 }
 
@@ -196,20 +237,48 @@ async function startScheduledSync(
 function shouldRunJob(job: ScheduledJob): boolean {
   if (!job.enabled) return false;
 
-  const nextRun = job.nextRun ? new Date(job.nextRun) : null;
-  if (!nextRun) return false;
+  switch (job.scheduleType) {
+    case ScheduleType.DAILY:
+    case ScheduleType.CUSTOM:
+      // For daily and custom schedules, we check the next run time
+      const nextRun = job.nextRun ? new Date(job.nextRun) : null;
+      if (!nextRun) return false;
+      return nextRun <= new Date();
 
-  const now = new Date();
+    case ScheduleType.HOURLY:
+      // For hourly jobs, check if we're at the start of an hour
+      const now = new Date();
+      return now.getMinutes() === 0 && now.getSeconds() < 60;
 
-  // Debug log to see what's being compared
-  console.log(
-    `Job ${
-      job.name
-    } next run: ${nextRun.toISOString()}, now: ${now.toISOString()}`
-  );
+    case ScheduleType.MINUTES:
+      // For minute-based jobs, check if enough time has passed since last run
+      if (!job.interval || job.interval <= 0) return false;
+      if (!job.lastRun) return true; // Never run before
 
-  // We consider it should run if the scheduled time is in the past
-  return nextRun <= now;
+      const lastRun = new Date(job.lastRun);
+      const minutesSinceLastRun =
+        (Date.now() - lastRun.getTime()) / (1000 * 60);
+      return minutesSinceLastRun >= job.interval;
+
+    default:
+      return false;
+  }
+}
+
+// Get a descriptive text of the job schedule
+export function getScheduleDescription(job: ScheduledJob): string {
+  switch (job.scheduleType) {
+    case ScheduleType.DAILY:
+      return `Täglich um ${job.cronExpression} Uhr`;
+    case ScheduleType.HOURLY:
+      return "Stündlich";
+    case ScheduleType.MINUTES:
+      return `Alle ${job.interval} Minuten`;
+    case ScheduleType.CUSTOM:
+      return `Benutzerdefiniert: ${job.cronExpression}`;
+    default:
+      return "Unbekannter Zeitplan";
+  }
 }
 
 // UI timer to update countdown displays
@@ -266,7 +335,9 @@ export async function startScheduler(): Promise<void> {
     for (const job of jobs) {
       if (shouldRunJob(job)) {
         // Run the job
-        console.log(`Running scheduled job: ${job.name}`);
+        console.log(
+          `Running scheduled job: ${job.name} (${getScheduleDescription(job)})`
+        );
 
         try {
           // Determine which shops to sync
@@ -282,7 +353,9 @@ export async function startScheduler(): Promise<void> {
 
           // Update job's last run time
           const now = new Date();
-          const nextRun = getNextRunFromCron(job.cronExpression);
+
+          // Calculate next run time based on schedule type
+          const nextRun = getNextRunTime(job);
 
           scheduleStore.updateJob(job.id, {
             lastRun: now.toISOString(),
@@ -328,20 +401,27 @@ export function stopScheduler(): void {
 // Add a new scheduled job
 export async function addScheduledJob(
   name: string,
-  cronExpression: string,
+  scheduleType: ScheduleType,
+  scheduleValue: string,
+  interval?: number,
   shopIds: string[] = []
 ): Promise<string> {
-  const nextRun = getNextRunFromCron(cronExpression);
+  let cronExpression = scheduleValue;
 
+  // Build a job with the correct schedule details
   const jobId = scheduleStore.addJob({
     name,
+    scheduleType,
     cronExpression,
+    interval: interval,
     lastRun: null,
-    nextRun: nextRun ? nextRun.toISOString() : null,
+    nextRun: null, // Will be calculated when the scheduler starts
     enabled: true,
     shop_ids: shopIds, // Use snake_case key here
   });
 
+  // Update next run time for the new job
+  scheduleStore.updateNextRunTimes();
   await scheduleStore.saveJobs();
   return jobId;
 }
@@ -349,6 +429,19 @@ export async function addScheduledJob(
 // Human-readable format for when a job will next run
 export function getNextRunText(job: ScheduledJob): string {
   if (!job.enabled) return "Deaktiviert";
+
+  // For recurring jobs without a fixed next time, show a different message
+  if (
+    job.scheduleType === ScheduleType.MINUTES &&
+    (!job.nextRun || !job.lastRun)
+  ) {
+    return `Läuft alle ${job.interval} Minuten`;
+  }
+
+  if (job.scheduleType === ScheduleType.HOURLY && !job.nextRun) {
+    return "Läuft stündlich";
+  }
+
   if (!job.nextRun) return "Nicht geplant";
 
   return formatNextRun(new Date(job.nextRun));
