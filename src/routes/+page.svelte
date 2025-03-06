@@ -131,7 +131,9 @@
           <div class="alert error">{error}</div>
         {/if}
 
-        <OrdersTable columns={columns} orders={filteredOrders} />
+        <div class="orders-section">
+          <OrdersTable columns={columns} orders={filteredOrders} />
+        </div>
       </div>
       
       <div class="sidebar">
@@ -142,47 +144,8 @@
 </div>
 
 <style>
-  :global(:root) {
-    --base: #1e1e2e;
-    --mantle: #181825;
-    --crust: #11111b;
-    --text: #cdd6f4;
-    --subtext0: #a6adc8;
-    --subtext1: #bac2de;
-    --surface0: #313244;
-    --surface1: #45475a;
-    --surface2: #585b70;
-    --overlay0: #6c7086;
-    --overlay1: #7f849c;
-    --blue: #89b4fa;
-    --lavender: #b4befe;
-    --sapphire: #74c7ec;
-    --sky: #89dceb;
-    --red: #f38ba8;
-    --maroon: #eba0ac;
-    --peach: #fab387;
-    --yellow: #f9e2af;
-    --green: #a6e3a1;
-    --teal: #94e2d5;
-    
-    /* RGB values for transparency uses */
-    --red-rgb: 243, 139, 168;
-    --green-rgb: 166, 227, 161;
-    --blue-rgb: 137, 180, 250;
-  }
-
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
-      sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-    background-color: var(--base);
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-    overflow: hidden;
-    user-select: none;
-  }
-
+  /* Root variables are now in app.css */
+  
   main {
     flex: 1;
     display: flex;
@@ -195,6 +158,9 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
+    background-color: var(--base);
+    color: var(--text);
+    transition: all 0.3s ease;
   }
 
   .dashboard-layout {
@@ -208,19 +174,67 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    padding: 0.5rem;
+  }
+  
+  .orders-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-radius: 6px;
+    background-color: var(--mantle);
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 0.5rem;
   }
 
   .sidebar {
-    width: 300px;
+    width: 340px;
     border-left: 1px solid var(--surface0);
-    background-color: var(--mantle);
+    background-color: var(--base);
     overflow-y: auto;
+    transition: width 0.3s ease;
   }
 
   .alert.error {
-    background-color: var(--red);
-    color: var(--base);
+    background-color: rgba(var(--red-rgb), 0.2);
+    color: var(--red);
+    border-left: 4px solid var(--red);
     padding: 10px;
-    text-align: center;
+    margin: 0.5rem 0;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.9rem;
+  }
+  
+  /* Responsive styles */
+  @media (max-width: 1200px) {
+    .sidebar {
+      width: 300px;
+    }
+  }
+  
+  @media (max-width: 992px) {
+    .dashboard-layout {
+      flex-direction: column;
+    }
+    
+    .sidebar {
+      width: 100%;
+      max-height: 400px;
+      border-left: none;
+      border-top: 1px solid var(--surface0);
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .sidebar {
+      max-height: 350px;
+    }
+  }
+  
+  @media (max-width: 576px) {
+    .main-content {
+      padding: 0.25rem;
+    }
   }
 </style>

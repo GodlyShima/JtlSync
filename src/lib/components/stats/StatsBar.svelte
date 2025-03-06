@@ -1,13 +1,11 @@
 <script lang="ts">
   import SchedulePanel from "../schedule/SchedulePanel.svelte";
   import LogPanel from "./LogPanel.svelte";
-  import SyncPanel from "./SyncPanel.svelte";
 
 </script>
 
 <div class="dashboard-stats">
     <div class="stats-layout">
-			<SyncPanel />
       <SchedulePanel />
 			<LogPanel />
     </div>

@@ -137,11 +137,8 @@ async function setCurrentShop(shopId: string) {
     isLoading = true;
     error = null;
     
-		console.log(shopId);
-
-    // Fix here: The parameter needs to be named shop_id to match backend expectations
     config = await TauriApiService.invoke<AppConfig>('set_current_shop_command', { 
-      shop_id: shopId  // Changed from shopId to shop_id to match Rust backend
+      shop_id: shopId
     });
     
     // Update active shop
@@ -321,7 +318,7 @@ async function setCurrentShop(shopId: string) {
 async function startSync(shopId: string, hours?: number) {
   if (isSyncing) return;
 
-    // Timeout als Fallback setzen
+  // Timeout als Fallback setzen
   const syncTimeout = setTimeout(() => {
     if (isSyncing) {
       console.log("Sync timeout triggered - resetting isSyncing state");
@@ -372,7 +369,7 @@ async function startMultiSync() {
     isSyncing = false;
   }
 }
-  
+
   // Handle sync events for updates
   function handleSyncProgress(event: { payload: any }) {
     const [shopId, stats] = event.payload;
@@ -381,7 +378,7 @@ async function startMultiSync() {
   
   // Handle sync completion
   function handleSyncComplete(event: { payload: any }) {
-    const [stats] = event.payload;
+    const stats = event.payload;
     console.log("Sync completed:", stats);
     syncStats = { ...syncStats, [stats.shop_id]: stats };
     isSyncing = false;
@@ -449,9 +446,12 @@ async function startMultiSync() {
   
   <div class="shop-content">
     {#if isLoading && !config}
-      <div class="loading">Lädt Shops...</div>
+      <div class="loading">
+        <div class="spinner"></div>
+        <span>Lädt Shops...</span>
+      </div>
     {:else if isAddingShop || isEditingShop}
-      <div class="shop-form">
+      <div class="shop-form card">
         <div class="form-header">
           <h4>{isAddingShop ? 'Neuen Shop hinzufügen' : 'Shop bearbeiten'}</h4>
           <button class="action-btn close" on:click={cancelForm} title="Abbrechen">
@@ -596,7 +596,7 @@ async function startMultiSync() {
         <div class="form-actions">
           <button class="cancel-btn" on:click={cancelForm}>Abbrechen</button>
           <button 
-            class="save-btn" 
+            class="save-btn primary" 
             on:click={isAddingShop ? saveNewShop : updateShop}
             disabled={isLoading}
           >
@@ -605,7 +605,7 @@ async function startMultiSync() {
         </div>
       </div>
     {:else if isSettingTimeframe}
-      <div class="timeframe-form">
+      <div class="timeframe-form card">
         <div class="form-header">
           <h4>Zeitfenster konfigurieren</h4>
           <button class="action-btn close" on:click={cancelForm} title="Abbrechen">
@@ -629,7 +629,7 @@ async function startMultiSync() {
         <div class="form-actions">
           <button class="cancel-btn" on:click={cancelForm}>Abbrechen</button>
           <button 
-            class="save-btn" 
+            class="save-btn primary" 
             on:click={updateTimeframe}
             disabled={isLoading || currentTimeframe <= 0}
           >
@@ -640,7 +640,7 @@ async function startMultiSync() {
     {:else}
       <!-- Multi-shop sync controls -->
       {#if config?.shops?.length > 1}
-        <div class="multi-sync-controls">
+        <div class="multi-sync-controls card">
           <div class="selection-controls">
             <button class="small-btn" on:click={selectAllShops}>Alle auswählen</button>
             <button class="small-btn" on:click={deselectAllShops}>Keine auswählen</button>
@@ -659,7 +659,7 @@ async function startMultiSync() {
       
       <div class="shops-list">
         {#each config?.shops || [] as shop (shop.id)}
-          <div class="shop-item {shop.id === activeShop?.id ? 'active' : ''}">
+          <div class="shop-item card {shop.id === activeShop?.id ? 'active' : ''}">
             <!-- Shop selection checkbox for multi-sync -->
             <div class="shop-select">
               <input 
@@ -736,11 +736,11 @@ async function startMultiSync() {
                     {/if}
                     <div class="stat-row">
                       <span class="stat-label">Erfolgreich:</span>
-                      <span class="stat-value">{syncStats[shop.id].synced_orders}</span>
+                      <span class="stat-value success">{syncStats[shop.id].synced_orders}</span>
                     </div>
                     <div class="stat-row">
                       <span class="stat-label">Übersprungen:</span>
-                      <span class="stat-value">{syncStats[shop.id].skipped_orders}</span>
+                      <span class="stat-value warning">{syncStats[shop.id].skipped_orders}</span>
                     </div>
                   </div>
                 {/if}
@@ -748,7 +748,7 @@ async function startMultiSync() {
               
               <div class="shop-actions-row">
                 <button 
-                  class="sync-button" 
+                  class="sync-button {isSyncing ? 'loading' : ''}" 
                   on:click={() => startSync(shop.id)}
                   disabled={isSyncing}
                 >
@@ -774,6 +774,7 @@ async function startMultiSync() {
     display: flex;
     flex-direction: column;
     height: 100%;
+    padding: 0.5rem;
   }
   
   .shop-content {
@@ -783,16 +784,16 @@ async function startMultiSync() {
     gap: 0.75rem;
     overflow-y: auto;
     padding-right: 0.25rem;
-    padding: 15px;
   }
   
   .error-message {
     margin: 0.5rem 0;
     padding: 1rem;
-    background-color: rgba(243, 139, 168, 0.1);
+    background-color: rgba(var(--red-rgb), 0.1);
     border-left: 3px solid var(--red);
     color: var(--red);
     font-size: 0.8rem;
+    border-radius: var(--border-radius-sm);
   }
   
   .loading {
@@ -802,6 +803,20 @@ async function startMultiSync() {
     padding: 2rem;
     color: var(--subtext0);
     font-style: italic;
+    gap: 0.5rem;
+  }
+  
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--surface1);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   
   .shops-list {
@@ -812,12 +827,14 @@ async function startMultiSync() {
   
   .multi-sync-controls {
     background-color: var(--surface0);
-    border-radius: 6px;
+    border-radius: var(--border-radius-md);
     padding: 0.75rem;
     margin-bottom: 0.75rem;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    border-left: 3px solid var(--blue);
+    box-shadow: var(--shadow-sm);
   }
   
   .selection-controls {
@@ -829,7 +846,7 @@ async function startMultiSync() {
     background-color: var(--surface1);
     color: var(--text);
     border: none;
-    border-radius: 0.3rem;
+    border-radius: var(--border-radius-sm);
     padding: 0.25rem 0.5rem;
     font-size: 0.7rem;
     cursor: pointer;
@@ -844,7 +861,7 @@ async function startMultiSync() {
     background-color: var(--blue);
     color: var(--crust);
     border: none;
-    border-radius: 0.3rem;
+    border-radius: var(--border-radius-sm);
     padding: 0.5rem 1rem;
     cursor: pointer;
     display: flex;
@@ -852,7 +869,7 @@ async function startMultiSync() {
     justify-content: center;
     gap: 0.5rem;
     font-weight: 500;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--transition-fast);
   }
   
   .multi-sync-button:hover:not(:disabled) {
@@ -867,16 +884,18 @@ async function startMultiSync() {
   
   .shop-item {
     background-color: var(--surface0);
-    border-radius: 6px;
+    border-radius: var(--border-radius-md);
     padding: 0.75rem;
     border-left: 3px solid var(--surface1);
-    transition: all 0.2s ease;
+    transition: all var(--transition-fast);
     display: flex;
     gap: 0.75rem;
+    box-shadow: var(--shadow-sm);
   }
   
   .shop-item:hover {
     background-color: var(--surface1);
+    box-shadow: var(--shadow-md);
   }
   
   .shop-item.active {
@@ -934,8 +953,8 @@ async function startMultiSync() {
     color: var(--subtext0);
     width: 24px;
     height: 24px;
-    border-radius: 4px;
-    transition: background-color 0.2s, color 0.2s;
+    border-radius: var(--border-radius-sm);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
     padding: 0;
   }
   
@@ -975,7 +994,7 @@ async function startMultiSync() {
   
   .shop-stats {
     background-color: var(--surface0);
-    border-radius: 0.3rem;
+    border-radius: var(--border-radius-sm);
     padding: 0.5rem;
     margin: 0.5rem 0;
     font-size: 0.8rem;
@@ -995,6 +1014,18 @@ async function startMultiSync() {
     font-weight: 500;
   }
   
+  .stat-value.success {
+    color: var(--green);
+  }
+  
+  .stat-value.warning {
+    color: var(--yellow);
+  }
+  
+  .stat-value.error {
+    color: var(--red);
+  }
+  
   .shop-actions-row {
     display: flex;
     margin-top: 0.5rem;
@@ -1008,10 +1039,10 @@ async function startMultiSync() {
     background-color: var(--surface1);
     color: var(--text);
     border: 1px dashed var(--surface2);
-    border-radius: 6px;
+    border-radius: var(--border-radius-md);
     padding: 0.75rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--transition-fast);
     margin-top: 0.5rem;
   }
   
@@ -1025,7 +1056,7 @@ async function startMultiSync() {
     background-color: var(--blue);
     color: var(--crust);
     border: none;
-    border-radius: 0.3rem;
+    border-radius: var(--border-radius-sm);
     padding: 0.5rem 1rem;
     cursor: pointer;
     display: flex;
@@ -1034,7 +1065,7 @@ async function startMultiSync() {
     gap: 0.5rem;
     font-weight: 500;
     width: 100%;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--transition-fast);
   }
   
   .sync-button:hover:not(:disabled) {
@@ -1046,11 +1077,16 @@ async function startMultiSync() {
     cursor: not-allowed;
   }
   
+  .sync-button.loading {
+    background-color: var(--overlay0);
+  }
+  
   .shop-form, .timeframe-form {
     background-color: var(--surface0);
-    border-radius: 6px;
+    border-radius: var(--border-radius-md);
     padding: 1rem;
     border-left: 3px solid var(--blue);
+    box-shadow: var(--shadow-md);
   }
   
   .form-header {
@@ -1094,17 +1130,18 @@ async function startMultiSync() {
   .form-group input {
     width: 100%;
     padding: 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--border-radius-sm);
     border: 1px solid var(--surface1);
     background-color: var(--surface0);
     color: var(--text);
     font-size: 0.8rem;
-    transition: border-color 0.2s;
+    transition: border-color var(--transition-fast);
   }
   
   .form-group input:focus {
     outline: none;
     border-color: var(--blue);
+    box-shadow: 0 0 0 2px rgba(var(--blue-rgb), 0.2);
   }
   
   .form-group input::placeholder {
@@ -1127,13 +1164,13 @@ async function startMultiSync() {
   
   .cancel-btn {
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--border-radius-sm);
     background-color: var(--surface1);
     color: var(--text);
     border: none;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--transition-fast);
   }
   
   .cancel-btn:hover {
@@ -1142,14 +1179,14 @@ async function startMultiSync() {
   
   .save-btn {
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--border-radius-sm);
     background-color: var(--blue);
     color: var(--crust);
     border: none;
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--transition-fast);
   }
   
   .save-btn:hover:not(:disabled) {
@@ -1159,5 +1196,44 @@ async function startMultiSync() {
   .save-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  
+  /* Responsive styles */
+  @media (max-width: 768px) {
+    .shop-item {
+      flex-direction: column;
+    }
+    
+    .shop-select {
+      align-self: flex-start;
+      margin-bottom: 0.5rem;
+    }
+    
+    .shop-actions {
+      flex-wrap: wrap;
+    }
+  }
+  
+  @media (max-width: 576px) {
+    .multi-sync-controls {
+      padding: 0.5rem;
+    }
+    
+    .selection-controls {
+      flex-direction: column;
+      width: 100%;
+    }
+    
+    .selection-controls button {
+      width: 100%;
+    }
+    
+    .form-actions {
+      flex-direction: column;
+    }
+    
+    .cancel-btn, .save-btn {
+      width: 100%;
+    }
   }
 </style>
