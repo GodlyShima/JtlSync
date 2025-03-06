@@ -192,6 +192,10 @@ impl SyncEngine {
             
         if orders.is_empty() {
             info!("No new orders in the past {} hours for shop '{}'", hours, shop.name);
+            
+            app_handle.emit("sync-complete", stats.clone())
+                .map_err(|e| Error::System(format!("Failed to emit event: {}", e)))?;
+            
             return Ok(stats);
         }
         

@@ -27,20 +27,39 @@ export class TauriApiService {
     command: string,
     params?: Record<string, any>
   ): Promise<T> {
-    // Convert params to snake_case if provided
-    const snakeCaseParams = params
-      ? this.convertParamsToCasing(params)
-      : undefined;
+    if (params) {
+      // Erstellen Sie eine neue Params-Kopie mit beiden Namenskonventionen
+      const enhancedParams: Record<string, any> = {};
 
-    // Debug logging
-    this.logArgs(command, snakeCaseParams);
+      for (const [key, value] of Object.entries(params)) {
+        // Original-Parameter beibehalten
+        enhancedParams[key] = value;
 
-    try {
-      return await invoke<T>(command, snakeCaseParams);
-    } catch (err) {
-      console.error(`Error invoking ${command}:`, err);
-      throw err;
+        // Zusätzlich camelCase in snake_case umwandeln
+        if (/[A-Z]/.test(key)) {
+          const snakeKey = key.replace(
+            /[A-Z]/g,
+            (letter) => `_${letter.toLowerCase()}`
+          );
+          enhancedParams[snakeKey] = value;
+        }
+
+        // Zusätzlich snake_case in camelCase umwandeln
+        if (key.includes("_")) {
+          const camelKey = key.replace(/_([a-z])/g, (_, letter) =>
+            letter.toUpperCase()
+          );
+          enhancedParams[camelKey] = value;
+        }
+      }
+
+      // Debug-Ausgabe
+      console.log(`Enhanced params for ${command}:`, enhancedParams);
+
+      return await invoke<T>(command, enhancedParams);
     }
+
+    return await invoke<T>(command);
   }
 
   /**

@@ -185,8 +185,10 @@ async function startScheduledSync(
   jobId: string
 ): Promise<void> {
   return invoke("start_scheduled_sync", {
-    shop_ids: shopIds, // Manual mapping to snake_case
-    job_id: jobId, // Manual mapping to snake_case
+    shop_ids: shopIds,
+    job_id: jobId,
+    shopIds: shopIds, // Für Kompatibilität
+    jobId: jobId, // Diese Zeile hinzufügen
   });
 }
 

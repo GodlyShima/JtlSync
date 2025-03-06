@@ -288,8 +288,10 @@ async function setCurrentShop(shopId: string) {
       // Update timeframe
       const stats = await TauriApiService.invoke<SyncStats>('set_sync_hours', { 
         shop_id: timeframeShopId, 
-        hours: currentTimeframe 
+        hours: currentTimeframe,
+        shopId: timeframeShopId  // Diese Zeile hinzufügen
       });
+    
       
       // Update stats
       syncStats = { ...syncStats, [timeframeShopId]: stats };
@@ -316,42 +318,60 @@ async function setCurrentShop(shopId: string) {
   }
   
   // Start sync for a specific shop
-  async function startSync(shopId: string, hours?: number) {
-    if (isSyncing) return;
-    
-    try {
-      isSyncing = true;
-      error = null;
-      
-      // Start sync for specific shop, optionally with custom timeframe
-      await TauriApiService.invoke('start_sync_command', { 
-        shop_id: shopId,
-        hours: hours
-      });
-      
-    } catch (err) {
-      console.error("Failed to start sync:", err);
-      error = String(err);
+async function startSync(shopId: string, hours?: number) {
+  if (isSyncing) return;
+
+    // Timeout als Fallback setzen
+  const syncTimeout = setTimeout(() => {
+    if (isSyncing) {
+      console.log("Sync timeout triggered - resetting isSyncing state");
       isSyncing = false;
     }
+  }, 30000); // 30 Sekunden Timeout
+  
+  try {
+    isSyncing = true;
+    error = null;
+    
+    // Start sync for specific shop, optionally with custom timeframe
+    await TauriApiService.invoke('start_sync_command', { 
+      shop_id: shopId,
+      shopId: shopId, // Dual-Namen für Kompatibilität
+      hours: hours
+    });
+    
+    // Wichtig: Hier sollte isSyncing NICHT zurückgesetzt werden, da wir auf Events warten
+    // Dies geschieht in den Event-Handlern handleSyncComplete oder handleSyncError
+    
+  } catch (err) {
+    clearTimeout(syncTimeout);
+    console.error("Failed to start sync:", err);
+    error = String(err);
+    isSyncing = false;
   }
+}
   
   // Start multi-shop sync
-  async function startMultiSync() {
-    if (isSyncing || selectedShopIds.length === 0) return;
+async function startMultiSync() {
+  if (isSyncing || selectedShopIds.length === 0) return;
+  
+  try {
+    isSyncing = true;
+    error = null;
     
-    try {
-      isSyncing = true;
-      error = null;
-      
-      await TauriApiService.invoke('start_multi_sync_command', { shop_ids: selectedShopIds });
-      
-    } catch (err) {
-      console.error("Failed to start multi-shop sync:", err);
-      error = String(err);
-      isSyncing = false;
-    }
+    await TauriApiService.invoke('start_multi_sync_command', { 
+      shop_ids: selectedShopIds,
+      shopIds: selectedShopIds // Dual-Namen für Kompatibilität
+    });
+    
+    // Hier auch kein isSyncing = false, da wir auf Events warten
+    
+  } catch (err) {
+    console.error("Failed to start multi-shop sync:", err);
+    error = String(err);
+    isSyncing = false;
   }
+}
   
   // Handle sync events for updates
   function handleSyncProgress(event: { payload: any }) {
@@ -361,8 +381,9 @@ async function setCurrentShop(shopId: string) {
   
   // Handle sync completion
   function handleSyncComplete(event: { payload: any }) {
-    const [shopId, stats] = event.payload;
-    syncStats = { ...syncStats, [shopId]: stats };
+    const [stats] = event.payload;
+    console.log("Sync completed:", stats);
+    syncStats = { ...syncStats, [stats.shop_id]: stats };
     isSyncing = false;
   }
   
