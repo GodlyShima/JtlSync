@@ -121,7 +121,8 @@ pub fn get_order_items(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Result<
     Ok(results)
 }
 
-/// Get shipping address (ST) if available
+// Here's the revised version of the get_shipping_address function in src-tauri/src/db/joomla.rs
+
 pub fn get_shipping_address(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Result<Option<VirtueMartOrder>> {
     info!("Checking shipping address for order {} in Shop '{}'", order_id, shop.name);
     
@@ -134,6 +135,57 @@ pub fn get_shipping_address(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Re
         .map_err(|e| Error::Database(format!("Error connecting to database for shop '{}': {}", shop.name, e)))?;
     
     let results: Vec<VirtueMartOrder> = conn.exec_map(query, (order_id,), |row: Row| {
+        // Handle all optional fields properly
+        let phone_1: Option<String> = match row.get_opt::<String, _>("phone_1") {
+            Some(Ok(value)) => Some(value),
+            _ => None // Field doesn't exist or is NULL or has wrong type
+        };
+        
+        let phone_2: Option<String> = match row.get_opt::<String, _>("phone_2") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let first_name: Option<String> = match row.get_opt::<String, _>("first_name") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let last_name: Option<String> = match row.get_opt::<String, _>("last_name") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let address_1: Option<String> = match row.get_opt::<String, _>("address_1") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let address_2: Option<String> = match row.get_opt::<String, _>("address_2") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let zip: Option<String> = match row.get_opt::<String, _>("zip") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let city: Option<String> = match row.get_opt::<String, _>("city") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let email: Option<String> = match row.get_opt::<String, _>("email") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
+        let company: Option<String> = match row.get_opt::<String, _>("company") {
+            Some(Ok(value)) => Some(value),
+            _ => None
+        };
+        
         VirtueMartOrder {
             virtuemart_order_id: row.get("virtuemart_order_id").unwrap_or(0),
             order_number: "".to_string(), // Not needed for shipping address
@@ -141,16 +193,16 @@ pub fn get_shipping_address(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Re
             order_total: 0.0,             // Not needed for shipping address
             virtuemart_user_id: None,     // Not needed for shipping address
             order_status: None,           // Not needed for shipping address
-            first_name: row.get("first_name"),
-            last_name: row.get("last_name"),
-            phone_1: row.get("phone_1"),
-            phone_2: row.get("phone_2"),
-            address_1: row.get("address_1"),
-            address_2: row.get("address_2"),
-            zip: row.get("zip"),
-            city: row.get("city"),
+            first_name,
+            last_name,
+            phone_1,
+            phone_2,
+            address_1,
+            address_2,
+            zip,
+            city,
             virtuemart_country_id: row.get("virtuemart_country_id").unwrap_or(Some(81)),
-            email: row.get("email"),
+            email,
             virtuemart_paymentmethod_id: None, // Not needed for shipping address
             virtuemart_shipmentmethod_id: None, // Not needed for shipping address
             virtuemart_order_userinfo_id: row.get("virtuemart_order_userinfo_id"),
@@ -158,7 +210,7 @@ pub fn get_shipping_address(pool: &Pool, shop: &ShopConfig, order_id: i32) -> Re
             order_shipment: None,
             coupon_code: None,
             coupon_discount: None,
-            company: row.get("company"),
+            company,
             shop_id: Some(shop.id.clone()),
         }
     }).map_err(|e| Error::Database(format!("Error fetching shipping address for shop '{}': {}", shop.name, e)))?;
