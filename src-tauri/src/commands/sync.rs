@@ -41,8 +41,8 @@ pub async fn abort_sync_command<R: Runtime>(app_handle: AppHandle<R>) -> Result<
 #[tauri::command]
 pub async fn start_scheduled_sync<R: Runtime>(
     app_handle: AppHandle<R>,
-    shop_ids: Vec<String>,
-    job_id: String
+    shop_ids: Vec<String>,  // snake_case
+    job_id: String          // snake_case
 ) -> Result<()> {
     // Load config
     let config = load_config()?;

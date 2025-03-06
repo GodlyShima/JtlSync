@@ -10,7 +10,7 @@ interface ScheduledJob {
   lastRun: string | null;
   nextRun: string | null;
   enabled: boolean;
-  shopIds: string[]; // Array of shop IDs to sync
+  shop_ids: string[]; // Changed from shopIds to shop_ids
 }
 
 export interface ScheduleStore {
@@ -180,6 +180,16 @@ function formatNextRun(date: Date | null): string {
   }
 }
 
+async function startScheduledSync(
+  shopIds: string[],
+  jobId: string
+): Promise<void> {
+  return invoke("start_scheduled_sync", {
+    shop_ids: shopIds, // Manual mapping to snake_case
+    job_id: jobId, // Manual mapping to snake_case
+  });
+}
+
 // Check if a job should run now
 function shouldRunJob(job: ScheduledJob): boolean {
   if (!job.enabled) return false;
@@ -258,13 +268,15 @@ export async function startScheduler(): Promise<void> {
 
         try {
           // Determine which shops to sync
-          const shopIds = job.shopIds?.length > 0 ? job.shopIds : [];
+          const shopIds = job.shop_ids?.length > 0 ? job.shop_ids : [];
 
-          // Run the sync with the provided shop IDs - PARAMETER KORREKTUR HIER
-          await invoke("start_scheduled_sync", {
-            shop_ids: shopIds, // Geändert von shopIds zu shop_ids
-            job_id: job.id, // Geändert von jobId zu job_id
-          });
+          try {
+            // Pass directly with snake_case parameter names
+            await startScheduledSync(job.shop_ids, job.id);
+            console.log("Scheduled sync started successfully");
+          } catch (err) {
+            console.error("Failed to start scheduled sync:", err);
+          }
 
           // Update job's last run time
           const now = new Date();
@@ -325,7 +337,7 @@ export async function addScheduledJob(
     lastRun: null,
     nextRun: nextRun ? nextRun.toISOString() : null,
     enabled: true,
-    shopIds: shopIds,
+    shop_ids: shopIds, // Use snake_case key here
   });
 
   await scheduleStore.saveJobs();

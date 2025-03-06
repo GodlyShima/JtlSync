@@ -11,7 +11,7 @@ import type {
 
 export class TauriApiService {
   /**
-   * Debug-Funktion zum Protokollieren von Argumenten
+   * Debug logging for arguments
    */
   private static logArgs(
     command: string,
@@ -21,68 +21,24 @@ export class TauriApiService {
   }
 
   /**
-   * Invoke a Tauri command with debug logging
+   * Invoke a Tauri command with proper parameter casing
    */
   static async invoke<T>(
     command: string,
-    args?: Record<string, unknown>
+    params?: Record<string, any>
   ): Promise<T> {
-    // Log the command and args
-    this.logArgs(command, args);
+    // Convert params to snake_case if provided
+    const snakeCaseParams = params
+      ? this.convertParamsToCasing(params)
+      : undefined;
+
+    // Debug logging
+    this.logArgs(command, snakeCaseParams);
 
     try {
-      // Try with args as is
-      return await invoke<T>(command, args);
+      return await invoke<T>(command, snakeCaseParams);
     } catch (err) {
       console.error(`Error invoking ${command}:`, err);
-
-      // Try alternate argument names if the error seems related to arg naming
-      const errorMsg = String(err);
-      if (errorMsg.includes("missing required key") && args) {
-        console.warn("Attempting with alternate argument names...");
-
-        // Try with camelCase keys
-        if (command === "set_current_shop_command" && args.shop_id) {
-          console.warn("Trying with shopId instead of shop_id");
-          const altArgs = { shopId: args.shop_id };
-          this.logArgs(`${command} (alternative)`, altArgs);
-          try {
-            return await invoke<T>(command, altArgs);
-          } catch (altErr) {
-            console.error("Alternative also failed:", altErr);
-          }
-        }
-
-        // Try with both versions of the key
-        if (command === "set_current_shop_command" && args.shop_id) {
-          console.warn("Trying with both shopId and shop_id");
-          const dualArgs = {
-            shopId: args.shop_id,
-            shop_id: args.shop_id,
-          };
-          this.logArgs(`${command} (dual keys)`, dualArgs);
-          try {
-            return await invoke<T>(command, dualArgs);
-          } catch (dualErr) {
-            console.error("Dual keys also failed:", dualErr);
-          }
-        }
-
-        // Try with flat params when the command seems to expect this
-        if (command === "set_current_shop_command" && args.shop_id) {
-          const shopId = args.shop_id as string;
-          console.warn("Trying with shopId as direct parameter");
-          this.logArgs(`${command} (direct param)`, { directParam: shopId });
-          try {
-            // @ts-ignore - Bypassing type checking for this workaround
-            return await invoke<T>(command, shopId);
-          } catch (paramErr) {
-            console.error("Direct parameter also failed:", paramErr);
-          }
-        }
-      }
-
-      // If nothing worked, rethrow the original error
       throw err;
     }
   }
@@ -251,6 +207,31 @@ export class TauriApiService {
    */
   static async removeShop(shopId: string): Promise<AppConfig> {
     return this.invoke<AppConfig>("remove_shop_command", { shop_id: shopId });
+  }
+
+  /**
+   * Convert parameters from camelCase to snake_case for Rust backend compatibility
+   */
+  private static convertParamsToCasing(
+    params: Record<string, any>
+  ): Record<string, any> {
+    const result: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(params)) {
+      // Convert camelCase to snake_case
+      const snakeCaseKey = key.replace(
+        /[A-Z]/g,
+        (letter) => `_${letter.toLowerCase()}`
+      );
+      result[snakeCaseKey] = value;
+
+      // Debug the conversion
+      if (snakeCaseKey !== key) {
+        console.log(`Parameter conversion: ${key} -> ${snakeCaseKey}`);
+      }
+    }
+
+    return result;
   }
 
   /**
